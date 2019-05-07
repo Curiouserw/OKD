@@ -1,0 +1,250 @@
+
+apiVersion: v1
+kind: Template
+metadata:
+  name: openldap
+parameters:
+- description: "Optional version: 1.2.1, 1.2.4"
+  displayName: The Version of OpenLDAP
+  name: OPENLDAP_VERSION
+  required: true
+  value: 1.2.4
+- description: Volume size for Data
+  displayName: "openldap data volume size"
+  name: OPENLDAP_DATA_SIZE
+  value: 1Gi
+  required: true
+- description: Defaults to Example Inc.
+  displayName: Organisation name.  
+  name: OPENLDAP_ORGANISATION
+- description: Defaults to example.org
+  displayName: Ldap domain. 
+  name: OPENLDAP_DOMAIN
+- description:  If empty automatically set from LDAP_DOMAIN value. Defaults to (empty)
+  displayName: Ldap base DN.
+  name: OPENLDAP_BASE_DN  
+- description: Defaults to admin
+  displayName: OpenLDAP Admin  password
+  name: OPENLDAP_ADMIN_PASSWORD
+- description: Defaults to config
+  displayName: OpenLDAP Config  password
+  name: OPENLDAP_CONFIG_PASSWORD
+objects:
+#---------------------------------OpenLDAP  DC ---------------------------------
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    name: openldap
+    labels:
+      app: openldap
+  spec:
+    replicas: 1
+    template:
+      metadata:
+        labels:
+          app: openldap
+      spec:
+        containers:
+        - name: openldap
+          image: osixia/openldap:${OPENLDAP_VERSION}
+          envFrom:
+          - secretRef:
+              name: openldap-env
+          ports:
+          - containerPort: 389
+            name: openldap
+          volumeMounts:
+          - name: openldap-data
+            mountPath: /var/lib/ldap
+          - name: openldap-config
+            mountPath: /etc/ldap/slapd.d
+          - name: openldap-certs
+            mountPath: /container/service/slapd/assets/certs           
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 389
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 389
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: 200m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 100Mi      
+        volumes:
+        - name: openldap-data
+          persistentVolumeClaim:
+            claimName: openldap-data
+        - name: openldap-config
+          persistentVolumeClaim:
+            claimName: openldap-config
+        - name: openldap-certs
+          persistentVolumeClaim:
+            claimName: openldap-certs
+        serviceAccount: openldap
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    name: phpldapadmin
+    labels:
+      app: phpldapadmin
+  spec:
+    replicas: 1
+    template:
+      metadata:
+        labels:
+          app: phpldapadmin
+      spec:
+        containers:
+        - name: phpldapadmin
+          env:
+          - name: PHPLDAPADMIN_HTTPS
+            value: "false"
+          - name: PHPLDAPADMIN_LDAP_HOSTS
+            value: openldap-service
+          image: osixia/phpldapadmin:0.7.2
+          ports:
+          - containerPort: 80
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 80
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 80
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: 200m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 100Mi
+        restartPolicy: Always
+#---------------------------------OpenLDAP  Secret ---------------------------------
+- kind: Secret
+  apiVersion: v1
+  metadata:
+    name: openldap-env
+  stringData:
+    LDAP_ORGANISATION: ${OPENLDAP_ORGANISATION}
+    LDAP_DOMAIN: ${OPENLDAP_DOMAIN}
+    LDAP_BASE_DN: ${OPENLDAP_BASE_DN}
+    LDAP_ADMIN_PASSWORD: ${OPENLDAP_ADMIN_PASSWORD}
+    LDAP_CONFIG_PASSWORD: ${OPENLDAP_CONFIG_PASSWORD}
+
+#---------------------------------PHP-LDAP-Admin  SVC ---------------------------------
+- kind: Service
+  apiVersion: v1
+  metadata:
+    labels:
+      app: phpldapadmin
+    name: phpldapadmin-service
+  spec:
+    ports:
+      - port: 80
+    selector:
+      app: phpldapadmin
+
+#---------------------------------PHP-LDAP-Admin  Route--------------------------------
+- kind: Route
+  apiVersion: v1
+  metadata:
+    labels:
+      app: phpldapadmin
+    name: phpldapadmin
+  spec:
+    port:
+      targetPort: 80
+    to:
+      kind: Service
+      name: phpldapadmin-service
+      weight: 100
+    wildcardPolicy: None
+
+#---------------------------------OpenLDAP  SVC ---------------------------------
+
+- kind: Service
+  apiVersion: v1
+  metadata:
+    labels:
+      app: openldap
+    name: openldap-service
+  spec:
+    ports:
+      - port: 389
+    selector:
+      app: openldap
+
+#---------------------------------OpenLDAP  PVC ---------------------------------
+
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    labels:
+      app: openldap
+    name: openldap-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: "${OPENLDAP_DATA_SIZE}"
+
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    labels:
+      app: openldap
+    name: openldap-config
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10Mi
+
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    labels:
+      app: openldap
+    name: openldap-certs
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 10Mi
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: openldap
+    labels:
+      app: "openldap"
+      serviceAccount: "openldap"

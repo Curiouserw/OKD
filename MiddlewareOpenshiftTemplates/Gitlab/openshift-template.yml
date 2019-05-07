@@ -1,0 +1,473 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  createdBy: gitlab-ce-template
+metadata:
+  annotations:
+    description: "GitLab. Collaboration and source control management: code, test,
+      and deploy together! \n\n GitLab requries that the serviceaccount for the main
+      GitLab app be added to the anyuid security context. The service account name
+      is: <application name>-user"
+    iconClass: icon-gitlab
+    tags: instant-app,gitlab,VCS,ci-cd
+  creationTimestamp: null
+  name: gitlab-ce
+objects:
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+  spec:
+    tags:
+    - from:
+        kind: DockerImage
+        name: gitlab/gitlab-ce:10.8.4-ce.0
+      name: gitlab-10.8.4
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-redis
+  spec:
+    tags:
+    - from:
+        kind: DockerImage
+        name: redis:3.2.3-alpine
+      name: 3.2.3
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: ${APPLICATION_NAME}-user
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+  spec:
+    replicas: 1
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}
+    strategy:
+      recreateParams: {}
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          deploymentconfig: ${APPLICATION_NAME}
+      spec:
+        containers:
+        - env:
+          - name: GITLAB_OMNIBUS_CONFIG
+            value: hostname='${APPLICATION_HOSTNAME}'; external_url "http://#{hostname}/"
+              unless hostname.to_s == ''; root_pass='${GITLAB_ROOT_PASSWORD}'; gitlab_rails['initial_root_password']=root_pass
+              unless root_pass.to_s == ''; postgresql['enable']=false; gitlab_rails['db_host']
+              = '${APPLICATION_NAME}-postgresql'; gitlab_rails['db_password']='${POSTGRESQL_PASSWORD}';
+              gitlab_rails['db_username']='${POSTGRESQL_USER}'; gitlab_rails['db_database']='${POSTGRESQL_DATABASE}';
+              redis['enable'] = false; gitlab_rails['redis_host']='${APPLICATION_NAME}-redis';
+              unicorn['worker_processes'] = ${UNICORN_WORKERS}; manage_accounts['enable']
+              = true; manage_storage_directories['manage_etc'] = false; gitlab_shell['auth_file']
+              = '/gitlab-data/ssh/authorized_keys'; git_data_dirs({ 'default' => {
+              'path' => '/gitlab-data/git-data' } }); gitlab_rails['shared_path']
+              = '/gitlab-data/shared'; gitlab_rails['uploads_directory'] = '/gitlab-data/uploads';
+              gitlab_ci['builds_directory'] = '/gitlab-data/builds'; prometheus_monitoring['enable']
+              = false;
+          image: gitlab-ce
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /help
+              port: 80
+              scheme: HTTP
+            initialDelaySeconds: 200
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          name: gitlab-ce
+          ports:
+          - containerPort: 22
+            protocol: TCP
+          - containerPort: 80
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /help
+              port: 80
+              scheme: HTTP
+            initialDelaySeconds: 200
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: "1"
+              memory: 2Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /etc/gitlab
+            name: gitlab-ce-volume-1
+          - mountPath: /gitlab-data
+            name: gitlab-ce-volume-2
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        serviceAccount: ${APPLICATION_NAME}-user
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: gitlab-ce-volume-1
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-etc
+        - name: gitlab-ce-volume-2
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-data
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - gitlab-ce
+        from:
+          kind: ImageStreamTag
+          name: ${APPLICATION_NAME}:gitlab-10.8.4
+      type: ImageChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-redis
+  spec:
+    replicas: 1
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}-redis
+    strategy:
+      recreateParams: {}
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          deploymentconfig: ${APPLICATION_NAME}-redis
+      spec:
+        containers:
+        - args:
+          - exec redis-server
+          command:
+          - /bin/sh
+          - -ec
+          image: gitlab-ce-redis
+          imagePullPolicy: IfNotPresent
+          name: gitlab-ce-redis
+          ports:
+          - containerPort: 6379
+            protocol: TCP
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 300Mi
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /data
+            name: gitlab-ce-volume-4
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: gitlab-ce-volume-4
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-redis-data
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - gitlab-ce-redis
+        from:
+          kind: ImageStreamTag
+          name: ${APPLICATION_NAME}-redis:3.2.3
+      type: ImageChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-postgresql
+  spec:
+    replicas: 1
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}-postgresql
+    strategy:
+      recreateParams:
+        post:
+          execNewPod:
+            command:
+            - /usr/bin/scl
+            - enable
+            - rh-postgresql94
+            - export PGPASSWORD='${POSTGRESQL_ADMIN_PASSWORD}'; psql -h '${APPLICATION_NAME}-postgresql'
+              -U postgres -d ${POSTGRESQL_DATABASE} -c 'CREATE EXTENSION IF NOT EXISTS
+              pg_trgm;'
+            containerName: gitlab-ce-postgresql
+            env:
+            - name: HOME
+              value: /var/lib/pgsql
+            - name: PGDATA
+              value: /var/lib/pgsql/data/userdata
+            - name: CONTAINER_SCRIPTS_PATH
+              value: /usr/share/container-scripts/postgresql
+          failurePolicy: Abort
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: ${APPLICATION_NAME}
+          deploymentconfig: ${APPLICATION_NAME}-postgresql
+      spec:
+        containers:
+        - env:
+          - name: POSTGRESQL_USER
+            value: ${POSTGRESQL_USER}
+          - name: POSTGRESQL_PASSWORD
+            value: ${POSTGRESQL_PASSWORD}
+          - name: POSTGRESQL_DATABASE
+            value: ${POSTGRESQL_DATABASE}
+          - name: POSTGRESQL_ADMIN_PASSWORD
+            value: ${POSTGRESQL_ADMIN_PASSWORD}
+          image: gitlab-ce-postgresql
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 30
+            tcpSocket:
+              port: 5432
+            timeoutSeconds: 1
+          name: gitlab-ce-postgresql
+          ports:
+          - containerPort: 5432
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -i
+              - -c
+              - psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c
+                'SELECT 1'
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: "1"
+              memory: 512Mi
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /var/lib/pgsql/data
+            name: gitlab-ce-volume-3
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: gitlab-ce-volume-3
+          persistentVolumeClaim:
+            claimName: ${APPLICATION_NAME}-postgresql
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - gitlab-ce-postgresql
+        from:
+          kind: ImageStreamTag
+          name: postgresql:9.4
+          namespace: openshift
+      type: ImageChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+  spec:
+    ports:
+    - name: 22-ssh
+      port: 22
+      protocol: TCP
+      targetPort: 22
+    - name: 80-http
+      port: 80
+      protocol: TCP
+      targetPort: 80
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-redis
+  spec:
+    ports:
+    - name: 6379-redis
+      port: 6379
+      protocol: TCP
+      targetPort: 6379
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}-redis
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}-postgresql
+  spec:
+    ports:
+    - name: 5432-postgresql
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+    selector:
+      app: ${APPLICATION_NAME}
+      deploymentconfig: ${APPLICATION_NAME}-postgresql
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${APPLICATION_NAME}-redis-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${REDIS_VOL_SIZE}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${APPLICATION_NAME}-etc
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${ETC_VOL_SIZE}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${APPLICATION_NAME}-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${GITLAB_DATA_VOL_SIZE}
+
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: ${APPLICATION_NAME}-postgresql
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${POSTGRESQL_VOL_SIZE}
+- apiVersion: v1
+  kind: Route
+  metadata:
+    labels:
+      app: ${APPLICATION_NAME}
+    name: ${APPLICATION_NAME}
+  spec:
+    host: ${APPLICATION_HOSTNAME}
+    port:
+      targetPort: 80-http
+    to:
+      kind: Service
+      name: ${APPLICATION_NAME}
+parameters:
+- description: The name for the application. The service will be named like the application.
+  displayName: Application name.
+  name: APPLICATION_NAME
+  value: gitlab-ce
+- description: Hostname for service routes. Set this in order to have the GitLab display
+    the correct clone urls.
+  displayName: Gitlab instance hostname
+  name: APPLICATION_HOSTNAME
+  required: true
+- description: Password for the GitLab 'root' user. Must be at least 8 characters
+    long. Leave blank if you would rather configure the password using the website
+    during first use.
+  displayName: GitLab Root User Password
+  name: GITLAB_ROOT_PASSWORD
+- description: Username for PostgreSQL user that will be used for accessing the database.
+  displayName: PostgreSQL User
+  from: user[A-Z0-9]{3}
+  generate: expression
+  name: POSTGRESQL_USER
+  required: true
+- description: Password for the PostgreSQL user.
+  displayName: PostgreSQL Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: POSTGRESQL_PASSWORD
+  required: true
+- description: Password for the PostgreSQL Admin user.
+  displayName: PostgreSQL Admin User Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: POSTGRESQL_ADMIN_PASSWORD
+  required: true
+- description: Name of the PostgreSQL database accessed.
+  displayName: PostgreSQL Database Name
+  name: POSTGRESQL_DATABASE
+  required: true
+  value: gitlabhq_production
+- description: Number of Unicorn Workers to use per instance. Must be at least 2.
+  displayName: Number of Unicorn Workers
+  name: UNICORN_WORKERS
+  required: true
+  value: "2"
+- description: Volume size for /etc
+  displayName: /etc/gitlab volume size
+  name: ETC_VOL_SIZE
+  value: 100Mi
+- description: Volume size for GitLab data
+  displayName: GitLab data volume size
+  name: GITLAB_DATA_VOL_SIZE
+  value: 5Gi
+- description: Volume size for postgresql data
+  displayName: postgresql volume size
+  name: POSTGRESQL_VOL_SIZE
+  value: 2Gi
+- description: Volume size for redis data
+  displayName: redis volume size
+  name: REDIS_VOL_SIZE
+  value: 512Mi

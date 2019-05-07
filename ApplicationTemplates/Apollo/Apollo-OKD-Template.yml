@@ -1,0 +1,352 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  template: apollo
+metadata:
+  name: apollo
+objects:
+#=======MYSQL===============================================================================================
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    annotations:
+      template.openshift.io/expose-database_name: '{.data[''database-name'']}'
+      template.openshift.io/expose-password: '{.data[''database-password'']}'
+      template.openshift.io/expose-root_password: '{.data[''database-root-password'']}'
+      template.openshift.io/expose-username: '{.data[''database-user'']}'
+    name: mysql-configadmin
+  stringData:
+    database-name: mysql-configadmin
+    database-password: Apollo1234#!
+    database-root-password: Apollo1234#!
+    database-user: apollo
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: mysql-configadmin
+  spec:
+    replicas: 1
+    selector:
+      name: mysql-configadmin
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: mysql-configadmin
+      spec:
+        containers:
+        - env:
+          - name: MYSQL_USER
+            value: apollo
+          - name: MYSQL_PASSWORD
+            value: Apollo1234#!
+          - name: MYSQL_ROOT_PASSWORD
+            value: Apollo1234#!
+          - name: MYSQL_DATABASE
+            value: ApolloConfigDB 
+          image: 'docker-registry.default.svc:5000/openshift/mysql:5.7'
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 30
+            tcpSocket:
+              port: 3306
+            timeoutSeconds: 1
+          name: mysql-configadmin
+          ports:
+          - containerPort: 3306
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -i
+              - -c
+              - MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u $MYSQL_USER -D $MYSQL_DATABASE
+                -e 'SELECT 1'
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 512Mi
+          volumeMounts:
+          - mountPath: /var/lib/mysql/data
+            name: mysql-configadmin-data
+        volumes:
+        - name: mysql-configadmin-data
+          persistentVolumeClaim:
+            claimName: mysql-configadmin
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+          - mysql
+        from:
+          kind: ImageStreamTag
+          name: 'mysql:5.7'
+          namespace: openshift
+      type: ImageChange
+    - type: ConfigChange
+
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      template.openshift.io/expose-uri: mysql://{.spec.clusterIP}:{.spec.ports[?(.name=="mariadb")].port}
+    name: mysql-configadmin
+  spec:
+    ports:
+    - name: mariadb
+      port: 3306
+    selector:
+      name: mysql-configadmin
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: mysql-configadmin
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+
+
+
+
+#======================================Apollo ConfigAdmin=======================
+
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  annotations:
+    openshift.io/generated-by: OpenShiftWebConsole
+  labels:
+    app: apollo-configadmin
+  name: apollo-configadmin
+  namespace: apollo
+spec:
+  replicas: 1
+  selector:
+    app: apollo-configadmin
+    deploymentconfig: apollo-configadmin
+  strategy:
+    activeDeadlineSeconds: 21600
+    resources: {}
+    rollingParams:
+      intervalSeconds: 1
+      maxSurge: 25%
+      maxUnavailable: 25%
+      timeoutSeconds: 600
+      updatePeriodSeconds: 1
+    type: Rolling
+  template:
+    metadata:
+      annotations:
+        openshift.io/generated-by: OpenShiftWebConsole
+      labels:
+        app: apollo-configadmin
+        deploymentconfig: apollo-configadmin
+    spec:
+      containers:
+        - env:
+            - name: CONFIGSERVICE_REGISTRY_TO_EUREKA_URL_OR_IP
+              value: apollo-configadmin.apollo.svc
+            - name: CONFIGSERVICE_REGISTRY_TO_EUREKA_PORT
+              value: '8080'
+            - name: CONFIGSERVICEDB
+              value: mysql.apollo.svc
+            - name: CONFIGSERVICEDB_PORT
+              value: '3306'
+            - name: CONFIGSERVICEDB_USER
+              value: apollo
+            - name: CONFIGSERVICEDB_PASSWORD
+              value: apollo
+            - name: ADMINSERVICE_REGISTRY_TO_EUREKA_URL_OR_IP
+              value: apollo-configadmin.apollo.svc
+            - name: ADMINSERVICE_REGISTRY_TO_EUREKA_PORT
+              value: '8090'
+            - name: ADMINSERVICEDB
+              value: mysql.apollo.svc
+            - name: ADMINSERVICEDB_PORT
+              value: '3306'
+            - name: ADMINSERVICEDB_USER
+              value: apollo
+            - name: ADMINSERVICEDB_PASSWORD
+              value: apollo
+            - name: JAVA_OPTS
+              value: '-Xms2048m -Xmx3000m'
+          image: docker.io/curiouser/apollo-configadmin:v1
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 8090
+            timeoutSeconds: 1
+          name: apollo-configadmin
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+            - containerPort: 8090
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 40
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 1
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: apollo
+      serviceAccountName: apollo
+      terminationGracePeriodSeconds: 30
+  test: false
+  triggers:
+    - type: ConfigChange
+  
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: apollo-configadmin
+    name: apollo-configadmin
+  spec:
+    ports:
+      - name: 8080-tcp
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+      - name: 8090-tcp
+        port: 8090
+        protocol: TCP
+        targetPort: 8090
+    selector:
+      deploymentconfig: apollo-configadmin
+    type: ClusterIP
+
+
+#======================================Apollo Portal UI=======================
+
+- kind: DeploymentConfig
+  apiVersion: apps.openshift.io/v1
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: apollo-portalui
+    name: apollo-portalui
+  spec:
+    replicas: 1
+    selector:
+      app: apollo-portalui
+      deploymentconfig: apollo-portalui
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        annotations:
+          openshift.io/generated-by: OpenShiftWebConsole
+        creationTimestamp: null
+        labels:
+          app: apollo-portalui
+          deploymentconfig: apollo-portalui
+      spec:
+        containers:
+          - env:
+              - name: PORTALDB
+                value: mysql-apollo-portal.apollo.svc
+              - name: PORTALDB_PORT
+                value: '3306'
+              - name: PORTALDB_PASSWORD
+                value: apollo
+              - name: DEV_METASERVER
+                value: 'http://apollo-configadmin.apollo.svc:8080'
+              - name: JAVA_OPTS
+                value: '-Xms1024m -Xmx1050m'
+              - name: PORTALDB_USER
+                value: apollo
+            image: docker.io/curiouser/apollo-portal:v1
+            imagePullPolicy: IfNotPresent
+            name: apollo-portalui
+            ports:
+              - containerPort: 8080
+                protocol: TCP
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: apollo
+        serviceAccountName: apollo
+        terminationGracePeriodSeconds: 30
+    test: false
+    triggers:
+      - type: ConfigChange
+
+
+
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: apollo-portalui
+    name: apollo-portalui
+  spec:
+    ports:
+      - name: 8080-tcp
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+    selector:
+      deploymentconfig: apollo-portalui
+    sessionAffinity: None
+    type: ClusterIP
+
+- apiVersion: v1
+  kind: Route
+  metadata:
+    labels:
+      app: apollo-portalui
+    name: apollo-portalui
+  spec:
+    port:
+      targetPort: 8080-tcp
+    to:
+      kind: Service
+      name: apollo-portalui
+      weight: 100
+
+
+#=============================Service Account ================
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: apollo
+    labels:
+      app: "apollo"
+      serviceAccount: "apollo"

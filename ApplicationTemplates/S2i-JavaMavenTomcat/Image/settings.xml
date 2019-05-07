@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+<!-- =====================本地仓库路径设置====================================== -->
+<localRepository>${user.home}/.m2/repository</localRepository>
+
+<!-- =====================用户交互模式设置====================================== -->
+<interactiveMode>true</interactiveMode>
+
+<!-- =====================离线模式设置========================================== -->
+<offline>false</offline>
+
+<!-- =====================插件组织设置========================================== -->
+<pluginGroups>
+</pluginGroups>
+
+<!-- =====================代理设置============================================== -->
+<proxies>
+ </proxies>
+
+<!-- =====================仓库设置============================================== -->
+<servers>
+</servers>
+
+<!-- =====================仓库源设置============================================ -->
+<mirrors>
+  <mirror>
+    <id>alimaven</id>
+    <name>aliyun maven</name>
+    <url>http://maven.aliyun.com/nexus/content/groups/public/</url>
+    <mirrorOf>central</mirrorOf>
+  </mirror> 
+</mirrors>
+
+<!-- ==============================构建配置设置================================= -->
+  <profiles>
+    <profile></profile>
+  </profiles>
+</settings>

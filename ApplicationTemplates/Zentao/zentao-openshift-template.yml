@@ -1,0 +1,334 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: zentao
+message: |-
+  The following service(s) have been created in your project: mysql.
+         Username: ${MYSQL_USER}
+         Password: ${MYSQL_PASSWORD}
+    Database Name: ${MYSQL_DATABASE}
+   Connection URL: mysql://mysql:3306/
+#====================================参数=====================================
+parameters:
+- description: The admin user of Adminer need a password to auth access Adminer statics。
+  displayName:  Adminer ADMIN password
+  name: ADMINER_ADMIN_PASSWORD
+  required: true
+- description: Volume size for zentao
+  displayName: "zentao data volume size"
+  name: ZENTAO_DATA_SIZE
+  value: 5Gi
+- description: Volume size for mysql
+  displayName: "mysql data volume size"
+  name: MYSQL_DATA_SIZE
+  value: 5Gi
+- description: Username for MySQL user that will be used for accessing the database.
+  displayName: MySQL Connection Username
+  from: user[A-Z0-9]{3}
+  generate: expression
+  name: MYSQL_USER
+  required: true
+- description: Password for the MySQL connection user.
+  displayName: MySQL Connection Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: MYSQL_PASSWORD
+  required: true
+- description: Password for the MySQL root user.
+  displayName: MySQL root user Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: MYSQL_ROOT_PASSWORD
+  required: true
+
+
+objects:
+#===================================Secret=================================================
+- kind: Secret
+  apiVersion: v1
+  metadata:
+    annotations:
+      template.openshift.io/expose-database_name: '{.data[''database-name'']}'
+      template.openshift.io/expose-password: '{.data[''database-password'']}'
+      template.openshift.io/expose-root_password: '{.data[''database-root-password'']}'
+      template.openshift.io/expose-username: '{.data[''database-user'']}'
+      template.openshift.io/expose-adminer-admin-password: '{.data[''adminer-admin-password'']}'
+    name: mysql-zentao
+    labels:
+      app: "mysql-zentao"
+      secret: "mysql-zentao"
+  stringData:
+    database-name: zentao
+    database-password: ${MYSQL_PASSWORD}
+    database-root-password: ${MYSQL_ROOT_PASSWORD}
+    database-user: ${MYSQL_USER}
+    adminer-admin-password: ${ADMINER_ADMIN_PASSWORD}
+#=================================route=====================================
+- kind: Route
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: zentao http route
+    name: zentao
+    labels:
+      app: "zentao"
+      route: "zentao"
+  spec:
+    to:
+      kind: Service
+      name: "zentao"
+      weight: 100
+    port:
+      targetPort: zentao-80
+#=================================SVC=====================================
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      template.openshift.io/expose-uri: mysql://{.spec.clusterIP}:{.spec.ports[?(.name=="mysql")].port}
+    name: mysql
+    labels:
+      app: "mysql"
+      service: "mysql"
+  spec:
+    ports:
+    - name: mysql
+      port: 3306
+    selector:
+      name: mysql
+    type: ClusterIP
+    sessionAffinity: None
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      description: Exposes and load balances the zentao pods
+    name: zentao
+    labels:
+      app: "zentao"
+      service: "zentao"
+  spec:
+    ports:
+    - name: zentao-80
+      protocol: TCP
+      port: 80
+      targetPort: 80
+    selector:
+      app: "zentao"
+      deploymentconfig: "zentao"
+    type: ClusterIP
+    sessionAffinity: None
+#=================================PVC=====================================
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    name: "zentao-data"
+    labels:
+      app: "zentao"
+      PersistentVolumeClaim: "zentao-data"
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: "${ZENTAO_DATA_SIZE}"
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    name: "zentao-mysql-data"
+    labels:
+      app: "mysql"
+      persistentVolumeClaim: "zentao-mysql-data"
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: "${MYSQL_DATA_SIZE}"
+#==========================ServiceAccount=============
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: zentao
+    labels:
+      app: "zentao"
+      serviceAccount: "zentao"
+#=================================DC=================================================================================
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    annotations:
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: mysql
+    labels:
+      app: "mysql"
+      deploymentconfig: "mysql"
+  spec:
+    replicas: 1
+    selector:
+      name: mysql
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: mysql
+      spec:
+        containers:
+        - env:
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                key: database-user
+                name: mysql-zentao
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: database-password
+                name: mysql-zentao
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: database-root-password
+                name: mysql-zentao
+          - name: MYSQL_DATABASE
+            valueFrom:
+              secretKeyRef:
+                key: database-name
+                name: mysql-zentao
+          image: ' '
+          imagePullPolicy: IfNotPresent
+          serviceAccount: zentao
+          serviceAccountName: zentao
+          livenessProbe:
+            initialDelaySeconds: 30
+            tcpSocket:
+              port: 3306
+            timeoutSeconds: 1
+          name: mysql
+          ports:
+          - containerPort: 3306
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -i
+              - -c
+              - MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u $MYSQL_USER -D $MYSQL_DATABASE
+                -e 'SELECT 1'
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 500Mi
+          volumeMounts:
+          - mountPath: /var/lib/mysql/data
+            name: mysql-data
+        volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: zentao-mysql-data
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - mysql
+        from:
+          kind: ImageStreamTag
+          name: mysql:5.5
+          namespace: openshift
+      type: ImageChange
+    - type: ConfigChange
+
+#----------------------------------------------------------------------------------------------
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: "zentao"
+      deploymentconfig: "zentao"
+    name: zentao
+  spec:
+    replicas: 1
+    selector:
+      app: zentao
+      deploymentconfig: zentao
+    strategy:
+      type: Recreate
+      recreateParams:
+        timeoutSeconds: 600
+      resources: {}
+    template:
+      metadata:
+        labels:
+          app: zentao
+          deploymentconfig: zentao
+      spec:
+        containers:
+          - env:
+              - name: MYSQL_HOST
+                value: $(MYSQL_SERVICE_HOST)
+              - name: MYSQL_PORT
+                value: $(MYSQL_SERVICE_PORT)
+              - name: MYSQL_DB_NAME
+                valueFrom:
+                  secretKeyRef:
+                    key: database-name
+                    name: mysql-zentao
+              - name: MYSQL_DB_USER
+                valueFrom:
+                  secretKeyRef:
+                    key: database-user
+                    name: mysql-zentao
+              - name: MYSQL_DB_PASSWD
+                valueFrom:
+                  secretKeyRef:
+                    key: database-password
+                    name: mysql-zentao
+              - name: ADMINER_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    key: adminer-admin-password
+                    name: mysql-zentao
+            image: "docker.io/curiouser/zentao:10.4.stable"
+            imagePullPolicy: Always
+            livenessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 80
+              timeoutSeconds: 1
+            name: zentao
+            ports:
+              - containerPort: 80
+                protocol: TCP
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 15
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 80
+              timeoutSeconds: 1
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+              - mountPath: /opt/zentaopms/www/data/upload/
+                name: zentao-data
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: zentao
+        serviceAccountName: zentao
+        terminationGracePeriodSeconds: 30
+        volumes:
+          - name: zentao-data
+            persistentVolumeClaim:
+              claimName: zentao-data
+    test: false
+    triggers:
+      - type: ConfigChange

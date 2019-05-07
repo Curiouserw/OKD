@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+nginx -c /data/nginx/nginx.conf
+tail -f /data/nginx/logs/access.log

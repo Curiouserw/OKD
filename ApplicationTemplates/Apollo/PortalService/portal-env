@@ -1,0 +1,14 @@
+#portal service数据库相关的信息
+PORTALDB=1.2.3.3
+PORTALDB_PORT=3306
+PORTALDB_USER=portal
+PORTALDB_PASSWORD=abcdefg
+
+#各个环境的MetaService的地址
+DEV_METASERVER=http://1.2.3.4:8080
+FAT_METASERVER=http://1.2.3.5:8080
+UAT_METASERVER=http://1.2.3.6:8080
+
+
+#JVM配置
+JAVA_OPTS=-Xms2560m -Xmx3000m

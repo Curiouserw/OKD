@@ -1,0 +1,65 @@
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: datadir-kafka-0
+  namespace: kafka
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: ceph-rbd-sc
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: datadir-kafka-1
+  namespace: kafka
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: ceph-rbd-sc
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: datadir-kafka-2
+  namespace: kafka
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: ceph-rbd-sc
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: datadir-kafka-3
+  namespace: kafka
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: ceph-rbd-sc
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: datadir-kafka-4
+  namespace: kafka
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  storageClassName: ceph-rbd-sc

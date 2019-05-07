@@ -1,0 +1,185 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: front-nodejs-s2i
+metadata:
+  annotations:
+    description: NodeJS前端应用S2I部署模板
+    iconClass: icon-apache
+    openshift.io/display-name: NodeJS前端应用--S2I应用部署模板
+    openshift.io/documentation-url: https://github.com/RationalMonster/OpenShift/tree/master/ApplicationTemplates
+    openshift.io/long-description: 该模板基于Nodejs,集成了nginx。适用于部署nodejs前端应用。
+    openshift.io/provider-display-name: Curiouser
+    openshift.io/support-url: https://github.com/RationalMonster/OpenShift/tree/master/ApplicationTemplates
+    tags: front,nodejs,s2i
+  creationTimestamp: null
+  name: front-nodejs-s2i
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      description: Exposes and load balances the application pods
+    name: ${NAME}
+  spec:
+    ports:
+    - name: web
+      port: 8080
+      targetPort: 8080
+    selector:
+      name: ${NAME}
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: ${NAME}-git-username-password
+    namespace: trafficalliesdev
+  stringData:
+    password: ${GIT_PASSWORD}
+    username: ${GIT_USERNAME}
+  type: kubernetes.io/basic-auth
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: ${NAME}
+  spec:
+    to:
+      kind: Service
+      name: ${NAME}
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    annotations:
+      description: Keeps track of changes in the application image
+    name: ${NAME}
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      description: Defines how to build the application
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${NAME}
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${NAME}:latest
+    source:
+      git:
+        ref: ${SOURCE_REPOSITORY_REF}
+        uri: ${SOURCE_REPOSITORY_URL}
+      sourceSecret:
+        name: ${NAME}-git-username-password
+      type: Git
+    strategy:
+      sourceStrategy:
+        env:
+        - name: NPM_INSTALL_ARGS
+          value: ${NPM_INSTALL_ARGS}
+        - name: NPM_RUN_ARGS
+          value: ${NPM_RUN_ARGS}
+        from:
+          kind: ImageStreamTag
+          name: NodeJS:v1
+          namespace: openshift
+      type: Source
+    triggers:
+    - type: ImageChange
+    - type: ConfigChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      description: Defines how to deploy the application server
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${NAME}
+  spec:
+    replicas: 1
+    selector:
+      name: ${NAME}
+    strategy:
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: ${NAME}
+        name: ${NAME}
+      spec:
+        containers:
+        - name: ${NAME}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          image: ""
+          env: 
+          - name: NGINX_ENV
+            value: ${NGINX_ENV}
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: "2"
+              memory: ${MEMORY_LIMIT}
+            requests:
+              cpu: "1"
+              memory: 300Mi
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - ${NAME}
+        from:
+          kind: ImageStreamTag
+          name: ${NAME}:latest
+      type: ImageChange
+    - type: ConfigChange
+parameters:
+- description: 必须
+  displayName: 应用名称
+  name: NAME
+  required: true
+- description: 单位：KiB/KB，MiB/MB，GiB/GB。
+  displayName: openshift限制应用使用的内存上限。
+  name: MEMORY_LIMIT
+  required: true
+  value: 500Mi
+- description: 必须
+  displayName: 源代码地址
+  name: SOURCE_REPOSITORY_URL
+  required: true
+- description: 默认是master分支
+  displayName: 设置源代码的分支，Tag或者其他的标识。
+  name: SOURCE_REPOSITORY_REF
+- description: 具有拉取源代码权限的Git用户名
+  displayName: Git用户名
+  name: GIT_USERNAME
+  required: true
+- description: Git用户密码
+  displayName: Git密码
+  name: GIT_PASSWORD
+  required: true
+- description: 该参数用于追加到npm install后面
+  displayName: npm install 参数 
+  name: NPM_INSTALL_ARGS
+  value: --unsafe-perm
+- description: 该参数用于追加到npm run后面
+  displayName: npm run 参数 
+  required: true
+  name: NPM_RUN_ARGS
+- description: 该参数涉及到加载当前环境下的nginx配置和前端config.js文件。（至关重要）
+  displayName: 指定加载该环境下的Nginx配置文件。该参数值为小写，例如：dev,sit,uat等。
+  name: NGINX_ENV
+  required: true

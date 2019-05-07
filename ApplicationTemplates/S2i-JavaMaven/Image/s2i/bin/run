@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+cd /data/apps/jars
+echo "java $JVM_OPTS -jar `find . -name *.jar` $JAVA_OPTS"
+java $JVM_OPTS -jar `find . -name *.jar` $JAVA_OPTS

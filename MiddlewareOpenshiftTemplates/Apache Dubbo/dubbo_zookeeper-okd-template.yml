@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: apache-dubbo-zookeeper
+parameters:
+- description: 
+  displayName: 
+  name: ZOOKEEPER_SERVICE
+  required: true
+  value: "localhost:2181"
+objects:
+#========================================Kafka DC===================
+- kind: DeploymentConfig
+  apiVersion: apps.openshift.io/v1
+  metadata:
+    labels:
+      app: dubbo
+    name: apache-dubbo-zookeeper
+  spec:
+    replicas: 1
+    selector:
+      deploymentconfig: apache-dubbo-zookeeper
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          deploymentconfig: apache-dubbo-zookeeper
+      spec:
+        containers:
+          - command:
+              - /bin/sh
+              - '-c'
+              - '-i'
+              - >-
+                java -jar /opt/dubbo-admin-0.1.jar
+            image: 'docker.io/curiouser/dubbo_zookeeper:v1'
+            env:
+              - name: ZOOKEEPER_SERVICE
+                value: ${ZOOKEEPER_SERVICE}
+            imagePullPolicy: Always
+            name: apache-dubbo
+            ports:
+              - containerPort: 8080
+                protocol: TCP
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 35
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 8080
+              timeoutSeconds: 1
+            resources:
+              limits:
+                cpu: '1'
+                memory: 1Gi
+              requests:
+                cpu: 500m
+                memory: 500Mi
+          - name: apache-zookeeper
+            command:
+              - /bin/sh
+              - '-c'
+              - '-i'
+              - >-
+                zkServer.sh start
+            image: 'docker.io/curiouser/dubbo_zookeeper:v1'
+            imagePullPolicy: Always
+            ports:
+              - containerPort: 2181
+                protocol: TCP
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            resources:
+              limits:
+                cpu: '1'
+                memory: 1Gi
+              requests:
+                cpu: 500m
+                memory: 500Mi
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 35
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 2181
+              timeoutSeconds: 1
+        dnsPolicy: ClusterFirst
+        hostname: dubbo-zookeeper
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+    test: false
+    triggers:
+      - type: ConfigChange
+#===============================kafka svc==========
+- kind: Service
+  apiVersion: v1
+  metadata:
+    labels:
+      app: dubbo-zookeeper
+    name: apache-dubbo-zookeeper
+  spec:
+    ports:
+      - name: apache-dubbo
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+      - name: apache-zookeeper
+        port: 2181
+        protocol: TCP
+        targetPort: 2181
+    selector:
+      deploymentconfig: apache-dubbo-zookeeper
+    sessionAffinity: None
+    type: ClusterIP
+- kind: Route
+  apiVersion: v1 
+  metadata:
+    labels:
+      app: apache-dubbo-zookeeper
+    name: apache-dubbo-zookeeper
+  spec:
+    port:
+      targetPort: apache-dubbo
+    to:
+      kind: Service
+      name: apache-dubbo-zookeeper
+      weight: 100
+    wildcardPolicy: None

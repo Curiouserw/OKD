@@ -1,0 +1,243 @@
+apiVersion: v1
+kind: Template
+metadata:
+  annotations:
+    description: Easy Mock
+    tags: instant-app,easymock,jenkins
+    iconClass: icon-easymock
+  name: easy-mock
+objects:
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: easy-mock
+    name: easy-mock
+  spec:
+    replicas: 1
+    selector:
+      app: easy-mock
+      deploymentconfig: easy-mock
+    template:
+      metadata:
+        labels:
+          app: easy-mock
+          deploymentconfig: easy-mock
+      spec:
+        containers:
+        - command:
+            - /bin/sh
+            - '-c'
+            - '-i'
+            - npm run start
+          image: 'docker.io/easymock/easymock:1.6.0'
+          imagePullPolicy: IfNotPresent
+          name: easy-mock
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 7300
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 7300
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: "2"
+              memory: "500Mi"
+            requests:
+              cpu: "1"
+              memory: 300Mi
+          ports:
+          - containerPort: 7300
+            protocol: TCP
+          volumeMounts:
+          - mountPath: /home/easy-mock/easy-mock/config/
+            name: easymock-profile
+            readOnly: true
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        volumes:
+        - configMap:
+            defaultMode: 420
+            name: easy-mock
+          name: easymock-profile
+        serviceAccount: easy-mock
+    triggers:
+    - type: ConfigChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: easy-mock
+    name: mongo
+  spec:
+    replicas: 1
+    selector:
+      app: mongo
+      deploymentconfig: mongo
+    template:
+      metadata:
+        labels:
+          app: mongo
+          deploymentconfig: mongo
+      spec:
+        containers:
+        - image: mongo:4.1
+          imagePullPolicy: IfNotPresent
+          name: mongo
+          ports:
+          - containerPort: 27017
+            protocol: TCP
+          resources: {}
+          volumeMounts:
+          - mountPath: /data/configdb
+            name: mongo-1
+          - mountPath: /data/db
+            name: mongo-2
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: mongo-1
+          emptyDir: {}
+        - name: mongo-2
+          emptyDir: {}
+    test: false
+    triggers:
+    - type: ConfigChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: easy-mock
+    name: redis
+  spec:
+    replicas: 1
+    selector:
+      app: redis
+      deploymentconfig: redis
+    template:
+      metadata:
+        labels:
+          app: redis
+          deploymentconfig: redis
+      spec:
+        containers:
+        - image: docker.io/redis:5
+          imagePullPolicy: IfNotPresent
+          name: redis
+          ports:
+          - containerPort: 6379
+            protocol: TCP
+          volumeMounts:
+          - mountPath: /data
+            name: redis-volume-1
+        volumes:
+        - emptyDir: {}
+          name: redis-volume-1
+    triggers:
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: easy-mock
+    name: easy-mock
+  spec:
+    ports:
+    - name: 7300-tcp
+      port: 7300
+      protocol: TCP
+      targetPort: 7300
+    selector:
+      deploymentconfig: easy-mock
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: easy-mock
+    name: mongo
+  spec:
+    ports:
+    - name: 27017-tcp
+      port: 27017
+      protocol: TCP
+      targetPort: 27017
+    selector:
+      deploymentconfig: mongo
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: easy-mock
+    name: redis
+  spec:
+    ports:
+    - name: 6379-tcp
+      port: 6379
+      protocol: TCP
+      targetPort: 6379
+    selector:
+      app: redis
+      deploymentconfig: redis
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Route
+  metadata:
+    labels:
+      app: easy-mock
+    name: easy-mock
+  spec:
+    port:
+      targetPort: 7300-tcp
+    to:
+      kind: Service
+      name: easy-mock
+      weight: 100
+- apiVersion: v1
+  data:
+    production.json: "{\r\n  \"port\": 7300,\r\n  \"host\": \"0.0.0.0\",\r\n  \"pageSize\":
+      30,\r\n  \"proxy\": false,\r\n  \"db\": \"mongodb://mongo/easy-mock\",\r\n
+      \ \"unsplashClientId\": \"\",\r\n  \"redis\": {\r\n    \"keyPrefix\": \"[Easy
+      Mock]\",\r\n    \"port\": 6379,\r\n    \"host\": \"redis\",\r\n    \"password\":
+      \"\",\r\n    \"db\": 0\r\n  },\r\n  \"blackList\": {\r\n    \"projects\": [],
+      // projectId，例：\"5a4495e16ef711102113e500\"\r\n    \"ips\": [] // ip，例：\"127.0.0.1\"\r\n
+      \ },\r\n  \"rateLimit\": { \r\n    \"max\":
+      1000,\r\n    \"duration\": 1000\r\n  },\r\n  \"jwt\": {\r\n    \"expire\": \"14
+      days\",\r\n    \"secret\": \"shared-secret\"\r\n  },\r\n  \"upload\": {\r\n    \"types\":
+      [\".jpg\", \".jpeg\", \".png\", \".gif\", \".json\", \".yml\", \".yaml\"],\r\n
+      \   \"size\": 5242880,\r\n    \"dir\": \"../public/upload\",\r\n    \"expire\":
+      {\r\n      \"types\": [\".json\", \".yml\", \".yaml\"],\r\n      \"day\": -1\r\n
+      \   }\r\n  },\r\n  \"ldap\": {\r\n    \"server\": \"\", // 设置 server 代表启用 LDAP
+      登录。例：\"ldap://localhost:389\" 或 \"ldaps://localhost:389\"（使用 SSL）\r\n    \"bindDN\":
+      \"\", // 用户名，例：\"cn=admin,dc=example,dc=com\"\r\n    \"password\": \"\",\r\n    \"filter\":
+      {\r\n      \"base\": \"\", // 查询用户的路径，例：\"dc=example,dc=com\"\r\n      \"attributeName\":
+      \"\" // 查询字段，例：\"mail\"\r\n    }\r\n  },\r\n  \"fe\": {\r\n    \"copyright\":
+      \"\",\r\n    \"storageNamespace\": \"easy-mock_\",\r\n    \"timeout\": 25000,\r\n
+      \   \"publicPath\": \"/dist/\"\r\n  }\r\n}"
+  kind: ConfigMap
+  metadata:
+    name: easy-mock
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: easy-mock
+    labels:
+      app: "easy-mock"
+      serviceAccount: "easy-mock"

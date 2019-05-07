@@ -1,0 +1,255 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: consul-server
+parameters:
+- description: Name Of The DataCenter
+  displayName: DATACENTER NAME
+  name: DATACENTER_NAME
+  required: true
+- description: Volume size for Consul Data Volume
+  displayName: /consul/data volume size
+  name: CONSUL_DATA_SIZE
+  value: 500Mi
+- description: Consul Version
+  displayName: Consul Version
+  name: CONSUL_VERSION
+  value: 1.4.4
+objects:
+- kind: StatefulSet
+  apiVersion: apps/v1
+  metadata:
+    name: consul
+    namespace: consul
+    labels:
+      app: consul
+  spec:
+    serviceName: consul-server
+    podManagementPolicy: Parallel
+    replicas: 3
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        partition: 0
+    selector:
+      matchLabels:
+        app: consul-server
+    template:
+      metadata:
+        labels:
+          app: consul-server
+      spec:
+        terminationGracePeriodSeconds: 10
+        serviceAccountName: consul-server
+        containers:
+          - name: consul
+            image: consul:${CONSUL_VERSION}
+            env: []
+            command:
+              - "/bin/sh"
+              - "-ec"
+              - |
+                exec /bin/consul agent \
+                  -advertise="${CONSUL_SERVICE_HOST}" \
+                  -bind=0.0.0.0 \
+                  -bootstrap-expect=3 \
+                  -client=0.0.0.0 \
+                  -datacenter=Curiouser \
+                  -data-dir=/consul/data \
+                  -ui \
+                  -disable-host-node-id \
+                  -node-id=$(uuidgen | awk '{print tolower($0)}') \
+                  -retry-join=consul-0.consul-server.consul.svc \
+                  -retry-join=consul-1.consul-server.consul.svc \
+                  -retry-join=consul-2.consul-server.consul.svc \
+                  -server
+            volumeMounts:
+              - name: consul-data
+                mountPath: /consul/data
+            lifecycle:
+              preStop:
+                exec:
+                  command:
+                  - /bin/sh
+                  - -c
+                  - consul leave
+            ports:
+              - containerPort: 8500
+                name: http
+              - containerPort: 8301
+                name: serflan
+              - containerPort: 8302
+                name: serfwan
+              - containerPort: 8300
+                name: server
+              - containerPort: 8600
+                name: dns-tcp
+                protocol: "TCP"
+              - containerPort: 8600
+                name: dns-udp
+                protocol: "UDP"
+            readinessProbe:
+              exec:
+                command:
+                  - "/bin/sh"
+                  - "-ec"
+                  - |
+                    curl http://127.0.0.1:8500/v1/status/leader 2>/dev/null | \
+                    grep -E '".+"'
+              failureThreshold: 2
+              initialDelaySeconds: 5
+              periodSeconds: 3
+              successThreshold: 1
+              timeoutSeconds: 5
+            livenessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 60
+              successThreshold: 1
+              tcpSocket:
+                port: 8500
+              timeoutSeconds: 1
+            resources: 
+              limits:
+                cpu: "800m"
+                memory: 800Mi
+              requests:
+                cpu: 500m
+                memory: 500Mi
+    volumeClaimTemplates:
+      - metadata:
+          name: consul-data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: ${CONSUL_DATA_SIZE}
+# ================= Consul ServiceAccount =======================
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: consul-server
+    namespace: consul
+    labels:
+      app: consul-server    
+# ========================= Consul Service ============================            
+- kind: Service
+  apiVersion: v1
+  metadata:
+    name: consul-server
+    namespace: consul
+    labels:
+      app: 
+    annotations:
+  spec:
+    clusterIP: None
+    selector:
+      app: consul-server    
+    publishNotReadyAddresses: true
+    ports:
+      - name: http
+        port: 8500
+        targetPort: 8500
+      - name: serflan-tcp
+        protocol: "TCP"
+        port: 8301
+        targetPort: 8301
+      - name: serflan-udp
+        protocol: "UDP"
+        port: 8301
+        targetPort: 8301
+      - name: serfwan-tcp
+        protocol: "TCP"
+        port: 8302
+        targetPort: 8302
+      - name: serfwan-udp
+        protocol: "UDP"
+        port: 8302
+        targetPort: 8302
+      - name: server
+        port: 8300
+        targetPort: 8300
+      - name: dns-tcp
+        protocol: "TCP"
+        port: 8600
+        targetPort: dns-tcp
+      - name: dns-udp
+        protocol: "UDP"
+        port: 8600
+        targetPort: dns-udp
+# ========================= Consul Route ===================        
+- kind: Route
+  apiVersion: v1
+  metadata:
+    labels:
+      app: 'consul-server'
+    name: consul-server
+  spec:
+    port:
+      targetPort: http
+    to:
+      kind: Service
+      name: consul-server
+      weight: 100
+    wildcardPolicy: None
+# ========================= Consul ClusterRole ===================        
+- kind: ClusterRole
+  apiVersion: rbac.authorization.k8s.io/v1beta1
+  metadata:
+    name: consul-server
+    labels:
+      app: consul-server
+  rules:
+  - apiGroups: ["policy"]
+    resources: ["podsecuritypolicies"]
+    resourceNames:
+    - consul-server
+    verbs:
+    - use
+# ========================= Consul ClusterRoleBinding ===================    
+- kind: ClusterRoleBinding
+  apiVersion: rbac.authorization.k8s.io/v1beta1
+  metadata:
+    name: consul-server
+    labels:
+      app: consul-server
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: consul-server
+  subjects:
+    - kind: ServiceAccount
+      name: consul-server
+      namespace: consul
+# ========================= Consul PodSecurityPolicy ===================   
+- kind: PodSecurityPolicy
+  apiVersion: policy/v1beta1
+  metadata:
+    name: consul-server
+    labels:
+      app: consul-server
+  spec:
+    privileged: false
+    allowPrivilegeEscalation: false
+    requiredDropCapabilities:
+      - ALL
+    volumes:
+      - 'configMap'
+      - 'emptyDir'
+      - 'projected'
+      - 'secret'
+      - 'downwardAPI'
+      - 'persistentVolumeClaim'
+    hostNetwork: false
+    hostIPC: false
+    hostPID: false
+    runAsUser:
+      rule: 'RunAsAny'
+    seLinux:
+      rule: 'RunAsAny'
+    supplementalGroups:
+      rule: 'RunAsAny'
+    fsGroup:
+      rule: 'RunAsAny'
+    readOnlyRootFilesystem: false

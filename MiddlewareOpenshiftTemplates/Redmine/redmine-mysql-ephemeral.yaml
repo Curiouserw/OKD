@@ -1,0 +1,271 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: redmine-mysql-ephemeral
+labels:
+  template: redmine-mysql-ephemeral
+message: |-
+  The following service(s) have been created in your project: mysql / ${REDMINE_SERVICE}. The user for Redmine access is: admin/admin.
+objects:
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: mysql
+  stringData:
+    database-password: ${MYSQL_PASSWORD}
+    database-root-password: ${MYSQL_PASSWORD}
+    database-user: ${MYSQL_USER}
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    name: 
+    namespace: 
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1GiB
+    storageClassName: ceph-rbd-sc
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: redmine
+      template: redmine-mysql-ephemeral
+    name: mysql
+  spec:
+    replicas: 1
+    selector:
+      name: mysql
+    strategy:
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: mysql
+      spec:
+        containers:
+        - env:
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                key: database-user
+                name: mysql
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: database-password
+                name: mysql
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: database-root-password
+                name: mysql
+          - name: MYSQL_DATABASE
+            value: redmine
+          image: mysql:latest
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 3306
+            timeoutSeconds: 1
+          name: mysql
+          ports:
+          - containerPort: 3306
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -i
+              - -c
+              - MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u $MYSQL_USER -D $MYSQL_DATABASE
+                -e 'SELECT 1'
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 512Mi
+          securityContext:
+            capabilities: {}
+            privileged: false
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /var/lib/mysql/data
+            name: mysql-data
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 10
+        volumes:
+        - emptyDir: {}
+          name: mysql-data
+    test: false
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - mysql
+        from:
+          kind: ImageStreamTag
+          name: mysql:latest
+          namespace: openshift
+      type: ImageChange
+    - type: ConfigChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: redmine
+      template: redmine-mysql-ephemeral
+    name: redmine
+  spec:
+    replicas: 1
+    selector:
+      app: redmine
+      deploymentconfig: redmine
+    strategy:
+      type: Rolling
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+    template:
+      metadata:
+        labels:
+          app: redmine
+          deploymentconfig: redmine
+      spec:
+        containers:
+        - env:
+          - name: REDMINE_DB_MYSQL
+            value: mysql
+          - name: REDMINE_DB_PASSWORD
+            value: ${MYSQL_PASSWORD}
+          image: docker.io/redmine
+          imagePullPolicy: IfNotPresent
+          name: redmine
+          ports:
+          - containerPort: 3000
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /
+              port: 3000
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 1
+            successThreshold: 1
+            timeoutSeconds: 1
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /usr/src/redmine/files
+            name: redmine-1
+          - mountPath: /usr/src/redmine/plugins
+            name: pluginspvc
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 10
+        volumes:
+        - emptyDir: {}
+          name: redmine-1
+        - name: pluginspvc
+          persistentVolumeClaim:
+            claimName: plugins
+            
+    test: false
+    triggers:
+    - type: ConfigChange
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: mysql-ephemeral
+      template: redmine-mysql-ephemeral
+    name: mysql
+  spec:
+    ports:
+    - name: mysql
+      port: 3306
+      protocol: TCP
+      targetPort: 3306
+    selector:
+      name: mysql
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: redmine
+      template: redmine-mysql-ephemeral
+    name: ${REDMINE_SERVICE}
+  spec:
+    ports:
+    - name: 3000-tcp
+      port: 3000
+      protocol: TCP
+      targetPort: 3000
+    selector:
+      deploymentconfig: redmine
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  id: redmine-http
+  kind: Route
+  metadata:
+    annotations:
+      openshift.io/host.generated: "true"
+      description: Route for redmine's http service.
+    labels:
+      app: redmine
+      template: redmine-mysql-ephemeral
+    name: ${REDMINE_SERVICE}
+  spec:
+    to:
+      kind: Service
+      name: ${REDMINE_SERVICE}
+parameters:
+- description: Name of the redmine service
+  displayName: Redmine service
+  name: REDMINE_SERVICE
+  value: redmine
+  required: true
+- description: Username for MySQL user that will be used for accessing the database.
+  displayName: MySQL Connection Username
+  value: admin
+  name: MYSQL_USER
+  required: true
+- description: Password for the MySQL connection user
+  displayName: MySQL Connection Password
+  value: redhat123
+  name: MYSQL_PASSWORD
+  required: true

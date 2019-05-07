@@ -1,0 +1,119 @@
+kind: Template
+apiVersion: v1
+labels:
+  template: databases-adminer
+metadata:
+  name: databases-adminer
+  annotations:
+    describption: The PHP Databases Management Tool Adminer
+    tag: PHP Databases Management-Tool-Adminer
+#=============================Parameters====================
+parameters:
+- name: ADMINER_PASSWORD
+  displayName: Adminer http access admin password
+  description: Auth Adminer http access admin password
+  required: true
+
+objects:
+#===========================SVC==================
+- kind: Service
+  apiVersion: v1
+  metadata:
+    name: databasesadminer
+    labels:
+      app: databasesadminer
+      service: databasesadminer
+  spec:
+    ports:
+    - name: databasesadminer
+      port: 80
+      protocol: TCP
+      targetPort: 80
+    selector:
+      app: databasesadminer
+      deploymentconfig: databasesadminer
+    sessionAffinity: None
+    type: ClusterIP
+#===========================Route=================
+- kind: Route
+  apiVersion: v1
+  metadata:
+    name: databasesadminer
+    labels:
+      app: databasesadminer
+      route: databasesadminer
+  spec:
+    to:
+      kind: Service
+      name: databasesadminer
+      weight: 100
+#==========================ServiceAccount=============
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: "databasesadminer-user"
+#==========================DeploymentConfig==========
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    name: databasesadminer
+    labels:
+      app: databasesadminer
+      deploymentconfig: databasesadminer
+  spec:
+    replicas: 1
+    selector:
+      app: databasesadminer
+      deploymentconfig: databasesadminer
+    strategy:
+      type: Recreate
+      resources: {}
+      recreateParams:
+        timeoutSeconds: 200
+    triggers:
+      - type: ConfigChange
+    template:
+      metadata:
+        labels:
+          app: databasesadminer
+          deploymentconfig: databasesadminer
+      spec:
+        containers:
+        - env:
+          - name: ADMINER_PASSWORD
+            value: ${ADMINER_PASSWORD}
+          image: docker.io/curiouser/phpadminer:4.2.4
+          imagePullPolicy: IfNotPresent
+          terminationMessagePath: /dev/termination-log
+          name: databasesadminer
+          ports:
+          - containerPort: 80
+            protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 500Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            successThreshold: 1
+            tcpSocket:
+              port: 80
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 80
+            timeoutSeconds: 1
+        restartPolicy: Always
+        serviceAccount: databasesadminer-user
+        serviceAccountName: databasesadminer-user
+        terminationGracePeriodSeconds: 30
+        dnsPolicy: ClusterFirst

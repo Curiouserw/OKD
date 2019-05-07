@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+echo "---> Installing application source----------------"
+cp -Rf /tmp/src/* /data/apps/src
+cd /data/apps/src
+echo npm install $NPM_INSTALL_ARGS
+npm install $NPM_INSTALL_ARGS
+npm run $NPM_RUN_ARGS
+echo npm run $NPM_RUN_ARGS
+mv /data/apps/src/dist /data/apps/
+cp nginx.conf /data/nginx/
+cd ..
+rm -rf src
+rm -rf /tmp/src
+

@@ -1,0 +1,197 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: springboot-s2i
+metadata:
+  annotations:
+    description: SpringBoot s2i jar deploy template
+    iconClass: icon-apache
+    openshift.io/display-name: SpringBoot后端应用-S2I部署模板
+    openshift.io/documentation-url: https://github.com/RationalMonster/OpenShift/tree/master/ApplicationTemplates
+    openshift.io/long-description: 该模板基于的S2I镜像中集成了Apache Maven 3.3.3，Oracle JDK 8u111,适用于部署Jar包的SpringMVC应用。
+    openshift.io/provider-display-name: Curiouser
+    openshift.io/support-url: https://github.com/RationalMonster/OpenShift/tree/master/ApplicationTemplates
+    tags: SpringBoot,java,maven,s2i,jar
+  creationTimestamp: null
+  name: springboot-s2i
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      description: Exposes and load balances the application pods
+    name: ${NAME}
+  spec:
+    ports:
+    - name: web
+      port: 8080
+      targetPort: 8080
+    selector:
+      name: ${NAME}
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    labels:
+      name: ${NAME}
+    name: ${NAME}-git-username-password
+  stringData:
+    password: ${GIT_PASSWORD}
+    username: ${GIT_USERNAME}
+  type: kubernetes.io/basic-auth
+- apiVersion: v1
+  kind: Route
+  metadata:
+    name: ${NAME}
+  spec:
+    host: ${APP_DOMAIN}
+    to:
+      kind: Service
+      name: ${NAME}
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    annotations:
+      description: Keeps track of changes in the application image
+    labels:
+      name: ${NAME}      
+    name: ${NAME}
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    annotations:
+      description: Defines how to build the application
+      template.alpha.openshift.io/wait-for-ready: "true"
+    labels:
+      name: ${NAME}
+    name: ${NAME}
+  spec:
+    output:
+      to:
+        kind: ImageStreamTag
+        name: ${NAME}:latest
+    source:
+      git:
+        ref: ${SOURCE_REPOSITORY_REF}
+        uri: ${SOURCE_REPOSITORY_URL}
+      sourceSecret:
+        name: ${NAME}-git-username-password
+      type: Git
+    strategy:
+      sourceStrategy:
+        env:
+        - name: MVN_ARGS
+          value: ${MVN_ARGS}
+        - name: APP_TARGET
+          value: ${TargetDir}
+        from:
+          kind: DockerImage
+          name: 'docker.io/curiouser/okd-s2i-javamaven:v1'
+      type: Source
+    triggers:
+    - type: ImageChange
+    - type: ConfigChange
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      description: Defines how to deploy the application server
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: ${NAME}
+  spec:
+    replicas: 1
+    selector:
+      name: ${NAME}
+    strategy:
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          name: ${NAME}
+        name: ${NAME}
+      spec:
+        containers:
+        - env:
+          - name: JAVA_OPTS
+            value: ${JAVA_OPTS}
+          - name: JVM_OPTS
+            value: ${JVM_OPTS}
+          image: ""
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 180
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 2
+          name: ${NAME}
+          ports:
+          - containerPort: 8080
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 8080
+            timeoutSeconds: 2
+          resources:
+            limits:
+              cpu: "2"
+              memory: ${MEMORY_LIMIT}
+            requests:
+              cpu: "1"
+              memory: 800Mi
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - ${NAME}
+        from:
+          kind: ImageStreamTag
+          name: ${NAME}:latest
+      type: ImageChange
+    - type: ConfigChange
+parameters:
+- description: 必须
+  displayName: 应用名称(名称命名规则必须小写，中间可使用"-")
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: NAME
+  required: true
+- description: 该参数用于指定应用在openshift中生成的访问域名URL，参数填写规则不带访问协议。
+  displayName: 应用访问域名(空值是openshift自己生成默认域名)
+  name: APP_DOMAIN
+- description: 单位：KiB/KB，MiB/MB，GiB/GB
+  displayName: openshift限制应用使用的内存上限
+  name: MEMORY_LIMIT
+  required: true
+  value: 1024Mi
+- description: 必须
+  displayName: 源代码地址
+  name: SOURCE_REPOSITORY_URL
+  required: true
+- description: 默认是master分支
+  displayName: 设置源代码的分支，Tag或者其他的标识
+  name: SOURCE_REPOSITORY_REF
+- description: 具有拉取源代码权限的Git用户名
+  displayName: Git用户名
+  name: GIT_USERNAME
+  required: true
+- description: Git用户密码
+  displayName: Git密码
+  name: GIT_PASSWORD
+  required: true
+- description: 该参数用于"mvn clean install"命令之后(默认POM.xml路径为源代码所在的根路径)
+  displayName: Maven打包源代码时的参数配置
+  name: MVN_ARGS
+- description: 默认值为源代码所在的根路径，值为相对路径
+  displayName: 生成的Jar包路径
+  name: TargetDir
+  value: .
+- description: 该参数用于注入Java启动时的参数
+  displayName: Java运行时的命令行参数
+  name: JAVA_OPTS
+- description: 默认设置的初始堆内存为512M
+  displayName: JVM 运行调优参数
+  name: JVM_OPTS

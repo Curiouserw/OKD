@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+echo "---> Installing application source"
+cp -Rf /tmp/src/. /data/apps/src
+cd /data/apps/src
+echo "---> Building Spring Boot application from source"
+echo "--> # MVN_ARGS = $MVN_ARGS"
+mvn clean install $MVN_ARGS
+APP_TARGET=${APP_TARGET:-target}
+jarname=$(find $APP_TARGET -name *.war)
+cd ..
+cp src/$jarname jars/
+jarfilename=${jarname##*/}
+jarfilenamewithoutext=${jarfilename%.*}
+OPENSHIFT_BUILD_REFERENCE=${OPENSHIFT_BUILD_REFERENCE:-master}
+jarfinalname=${jarfilenamewithoutext}-${OPENSHIFT_BUILD_REFERENCE}.war
+mv jars/$jarfilename jars/$jarfinalname
+md5sum jars/$jarfinalname|awk '{print $1}' > jars/$jarfinalname.md5
+rm -rf src
+rm -rf /tmp/src
+cp jars/$jarfinalname /opt/tomcat/apache-tomcat-8.5.20/webapps/ROOT.war

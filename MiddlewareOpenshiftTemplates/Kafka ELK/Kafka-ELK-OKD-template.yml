@@ -1,0 +1,496 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: kafka-elk
+objects:
+#========================================Kafka DC===================
+- kind: DeploymentConfig
+  apiVersion: apps.openshift.io/v1
+  metadata:
+    labels:
+      app: apache-kafka
+    name: apache-kafka
+  spec:
+    replicas: 1
+    selector:
+      deploymentconfig: apache-kafka
+    strategy:
+      activeDeadlineSeconds: 21600
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          deploymentconfig: apache-kafka
+      spec:
+        containers:
+          - command:
+              - /bin/sh
+              - '-c'
+              - '-i'
+              - >-
+                bin/kafka-server-start.sh config/server.properties --override
+                advertised.host.name=${APACHE_KAFKA_SERVICE_HOST} --override
+                log.segment.bytes=10485760 --override log.retention.bytes=10485760
+                --override log.retention.hours=24 --override
+                delete.topic.enable=true
+            image: 'docker.io/rondinif/openshift-kafka:latest'
+            imagePullPolicy: Always
+            name: apache-kafka
+            ports:
+              - containerPort: 9092
+                protocol: TCP
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+              - mountPath: /tmp/kafka-logs
+                name: kafka-logs
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 9092
+              timeoutSeconds: 1
+            resources:
+              limits:
+                cpu: '1'
+                memory: 1Gi
+              requests:
+                cpu: 500m
+                memory: 500Mi
+          - args:
+              - config/zookeeper.properties
+            command:
+              - bin/zookeeper-server-start.sh
+            image: 'docker.io/rondinif/openshift-kafka:latest'
+            imagePullPolicy: Always
+            name: apache-zookeeper
+            ports:
+              - containerPort: 2181
+                protocol: TCP
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            resources:
+              limits:
+                cpu: '1'
+                memory: 1G
+              requests:
+                cpu: 500m
+                memory: 500Mi
+            volumeMounts:
+              - mountPath: /tmp/zookeeper
+                name: zookeeper
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 2181
+              timeoutSeconds: 1
+        dnsPolicy: ClusterFirst
+        hostname: apache-kafka
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+          - emptyDir: {}
+            name: kafka-logs
+          - emptyDir: {}
+            name: zookeeper
+    test: false
+    triggers:
+      - type: ConfigChange
+#===============================kafka svc==========
+- kind: Service
+  apiVersion: v1
+  metadata:
+    labels:
+      app: apache-kafka
+    name: apache-kafka
+  spec:
+    ports:
+      - name: kafka
+        port: 9092
+        protocol: TCP
+        targetPort: 9092
+      - name: zookeeper
+        port: 2181
+        protocol: TCP
+        targetPort: 2181
+    selector:
+      deploymentconfig: apache-kafka
+    sessionAffinity: None
+    type: ClusterIP
+#==============================logstash DC=======
+- kind: DeploymentConfig
+  apiVersion: apps.openshift.io/v1
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: logstash
+    name: logstash
+  spec:
+    replicas: 1
+    selector:
+      app: logstash
+      deploymentconfig: logstash
+    strategy:
+      activeDeadlineSeconds: 21600
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        annotations:
+          openshift.io/generated-by: OpenShiftWebConsole
+        labels:
+          app: logstash
+          deploymentconfig: logstash
+      spec:
+        initContainers:
+          - name: init-scheduler
+            image: busybox
+            command: ['sh', '-c', 'until nc -znv apache-kafka 2181 && nc -znv apache-kafka 9092 && nc -znv elasticsearch  9200; do echo waiting for apache-kafka and elasticsearch  all to be up; sleep 5; done;']
+            restartPolicy: Always
+        containers:
+          - image: 'docker.io/logstash:6.6.0'
+            imagePullPolicy: Always
+            name: logstash
+            ports:
+              - containerPort: 5044
+                protocol: TCP
+              - containerPort: 9600
+                protocol: TCP
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            resources:
+              limits:
+                cpu: '1'
+                memory: 1G
+              requests:
+                cpu: 500m
+                memory: 500Mi            
+            volumeMounts:
+              - mountPath: /usr/share/logstash/pipeline/
+                name: logstash-pipline-volume
+                readOnly: true
+              - mountPath: /usr/share/logstash/config/logstash.yml
+                name: logstash-config-volume
+                readOnly: true
+                subPath: logstash.yml
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+          - configMap:
+              defaultMode: 420
+              name: logstash-pipline-configmap
+            name: logstash-pipline-volume
+          - configMap:
+              defaultMode: 420
+              items:
+                - key: logstash.yml
+                  path: logstash.yml
+              name: logstash-config-configmap
+            name: logstash-config-volume
+    test: false
+    triggers:
+      - type: ConfigChange
+#===========================logstash ConfigMap==========
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: logstash-config-configmap
+  data:
+    logstash.yml: |-
+      http.host: "0.0.0.0"
+      xpack.monitoring.elasticsearch.url: http://${ELASTICSEARCH_SERVICE_HOST}:9200
+- apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: logstash-pipline-configmap
+  data:
+    logstash-pipline: |-
+      input{
+        kafka{
+          id => "kafka_input"
+          bootstrap_servers => "${APACHE_KAFKA_SERVICE_HOST}:9092"
+          group_id => "curiouser"
+          topics => ["log"]
+          decorate_events => true    
+          type => "kafka"
+        }
+      }
+      filter {
+        dissect {
+          mapping => {
+            "message" => "%{Timestamp}|%{LogLevel}|%{Class}|%{Thread}|%{AppID}|%{message}"
+          }
+        }
+        date {
+          match => [ "Timestamp", "yyyyMMddHHmmssSSS" ]
+        }
+        json {
+          source => "message"
+        }
+      }
+      output{
+         elasticsearch{
+            hosts => ["http://${ELASTICSEARCH_SERVICE_HOST}:9200"]
+            index => "%{AppID}-%{+YYYY.MM.dd}"
+            template_overwrite => true
+          }
+      }
+
+
+#===============================elasticsearch DC===========
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    labels:
+      app: elasticsearch
+    name: elasticsearch
+  spec:
+    replicas: 1
+    selector:
+      app: elasticsearch
+      deploymentconfig: elasticsearch
+    strategy:
+      activeDeadlineSeconds: 21600
+      recreateParams:
+        timeoutSeconds: 600    
+      type: Recreate
+    template:
+      metadata:
+        annotations:
+          openshift.io/generated-by: OpenShiftWebConsole
+        labels:
+          app: elasticsearch
+          deploymentconfig: elasticsearch
+      spec:
+        containers:
+          - env:
+              - name: discovery.type
+                value: single-node
+              - name: ES_JAVA_OPTS
+                value: "-Xms1g -Xmx1g"
+              - name: xpack.monitoring.collection.enabled
+                value: 'true'
+              - name: cluster.name
+                value: curiouser-elasticsearch
+            image: 'docker.io/elasticsearch:6.6.0'
+            imagePullPolicy: Always
+            name: elasticsearch
+            ports:
+              - containerPort: 9200
+                protocol: TCP
+              - containerPort: 9300
+                protocol: TCP
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+              - mountPath: /usr/share/elasticsearch/data
+                name: volume-elasticsearch-data
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 9200
+              timeoutSeconds: 1
+            resources:
+              limits:
+                cpu: '1'
+                memory: 2G
+              requests:
+                cpu: '1'
+                memory: 1G
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+          - name: volume-elasticsearch-data
+            persistentVolumeClaim:
+              claimName: pvc-elasticsearch-data
+    test: false
+    triggers:
+      - type: ConfigChange
+#===================================ElasticSearch SVC==========================
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: elasticsearch
+    name: elasticsearch
+  spec:
+    ports:
+      - name: 9200-tcp
+        port: 9200
+        protocol: TCP
+        targetPort: 9200
+      - name: 9300-tcp
+        port: 9300
+        protocol: TCP
+        targetPort: 9300
+    selector:
+      deploymentconfig: elasticsearch
+    sessionAffinity: None
+    type: ClusterIP
+
+#===================================ElasticSearch PVC==========================
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    name: pvc-elasticsearch-data
+    labels:
+      app: elasticsearch
+      PersistentVolumeClaim: elasticsearch
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: "10Gi"
+#===================================Kibana DC==============================          
+- kind: DeploymentConfig
+  apiVersion: v1
+  metadata:
+    annotations:
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: kibana
+    labels:
+      app: "kibana"
+      deploymentconfig: "kibana"
+  spec:
+    replicas: 1
+    selector:
+      app: kibana
+      deploymentconfig: kibana
+    strategy:
+      activeDeadlineSeconds: 21600
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        annotations:
+          openshift.io/generated-by: OpenShiftWebConsole
+        creationTimestamp: null
+        labels:
+          app: kibana
+          deploymentconfig: kibana
+      spec:
+        initContainers:
+        - name: init-scheduler
+          image: busybox
+          command: ['sh', '-c', 'until nc -znv elasticsearch 9200; do echo waiting for elasticsearch to be up; sleep 5; done;']
+          restartPolicy: Always
+        containers:
+          - env:
+              - name: ELASTICSEARCH_HOSTS
+                value: 'http://$(ELASTICSEARCH_SERVICE_HOST):9200'
+            image: 'docker.io/kibana:6.6.0'
+            imagePullPolicy: Always
+            livenessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 5601
+              timeoutSeconds: 1
+            name: kibana
+            ports:
+              - containerPort: 5601
+                protocol: TCP
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 5601
+              timeoutSeconds: 1
+            resources:
+              limits:
+                cpu: '1'
+                memory: 1G
+              requests:
+                cpu: 500m
+                memory: 500Mi
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+    test: false
+    triggers:
+      - type: ConfigChange
+      
+#=======================Kibana Service=========================
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: kibana
+    name: kibana
+  spec:
+    ports:
+      - name: 5601-tcp
+        port: 5601
+        protocol: TCP
+        targetPort: 5601
+    selector:
+      deploymentconfig: kibana
+    sessionAffinity: None
+    type: ClusterIP
+  
+
+#=========================Kibana route===========
+
+
+- kind: Route
+  apiVersion: route.openshift.io/v1
+  metadata:
+    annotations:
+      openshift.io/host.generated: 'true'
+    labels:
+      app: kibana
+    name: kibana
+  spec:
+    port:
+      targetPort: 5601-tcp
+    to:
+      kind: Service
+      name: kibana
+      weight: 100
+    wildcardPolicy: None

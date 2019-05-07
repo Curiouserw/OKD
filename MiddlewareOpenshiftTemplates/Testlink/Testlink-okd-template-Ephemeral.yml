@@ -1,0 +1,309 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+labels:
+  template: testlink
+message: |-
+  The following service(s) have been created in your project: mysql 5.7 and Testlink 1.9.19.
+  MySQL Default Info：
+    Username: bn_testlink
+    Password: bn_testlink
+    Database Name: testlink
+    Connection URL: mysql://mysql-testlink:3306/
+  Testlink Default Info：
+    admin user： user
+    admin password： bitnami
+  For more information about using this template, including OpenShift considerations, see https://github.com/sclorg/mysql-container/blob/master/5.7/root/usr/share/container-scripts/mysql/README.md.
+metadata:
+  annotations:
+    openshift.io/display-name: testlink
+  name: testlink
+objects:
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    annotations:
+      template.openshift.io/expose-database_name: '{.data[''database-name'']}'
+      template.openshift.io/expose-password: '{.data[''database-password'']}'
+      template.openshift.io/expose-root_password: '{.data[''database-root-password'']}'
+      template.openshift.io/expose-username: '{.data[''database-user'']}'
+    name: mysql-testlink
+  stringData:
+    database-name: 
+    database-password: testlink
+    database-root-password: testlink
+    database-user: testlink
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      template.openshift.io/expose-uri: mysql://{.spec.clusterIP}:{.spec.ports[?(.name=="mysql")].port}
+    name: mysql-testlink
+  spec:
+    ports:
+    - name: mysql
+      nodePort: 0
+      port: 3306
+      protocol: TCP
+      targetPort: 3306
+    selector:
+      name: mysql-testlink
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      template.alpha.openshift.io/wait-for-ready: "true"
+    name: mysql-testlink
+  spec:
+    replicas: 1
+    selector:
+      name: mysql-testlink
+    strategy:
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          name: mysql-testlink
+      spec:
+        containers:
+        - capabilities: {}
+          env:
+          - name: MYSQL_USER
+            value: bn_testlink
+          - name: MYSQL_PASSWORD
+            value: bn_testlink
+          - name: MYSQL_ROOT_PASSWORD
+            value: bn_testlink
+          - name: MYSQL_DATABASE
+            value: bitnami_testlink
+          image: 'docker.io/centos/mysql-57-centos7:latest'
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            initialDelaySeconds: 30
+            tcpSocket:
+              port: 3306
+            timeoutSeconds: 1
+          name: mysql
+          ports:
+          - containerPort: 3306
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -i
+              - -c
+              - MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u $MYSQL_USER -D $MYSQL_DATABASE
+                -e 'SELECT 1'
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 512Mi
+          securityContext:
+            capabilities: {}
+            privileged: false
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /var/lib/mysql/data
+            name: mysql-testlink-data
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        volumes:
+        - emptyDir:
+            medium: ""
+          name: mysql-testlink-data
+    triggers:
+    - type: ConfigChange
+
+
+#==============================================TestLink===========================================
+- kind: DeploymentConfig
+  apiVersion: apps.openshift.io/v1
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: testlink
+    name: testlink
+  spec:
+    replicas: 1
+    selector:
+      app: testlink
+      deploymentconfig: testlink
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        annotations:
+          openshift.io/generated-by: OpenShiftWebConsole
+        creationTimestamp: null
+        labels:
+          app: testlink
+          deploymentconfig: testlink
+      spec:
+        containers:
+          - env:
+              - name: MARIADB_HOST
+                value: mysql-testlink
+              - name: TESTLINK_DATABASE_PASSWORD
+                value: bn_testlink                
+              - name: TESTLINK_USERNAME
+                value: ${TESTLINK_ADMIN_USERNAME}
+              - name: TESTLINK_PASSWORD
+                value: ${TESTLINK_ADMIN_PASSWORD}
+              - name: TESTLINK_EMAIL
+                value: ${TESTLINK_ADMIN_EMAIL}
+              - name: TESTLINK_LANGUAGE
+                value: ${TESTLINK_LANGUAGE}
+              - name: SMTP_ENABLE
+                value: ${SMTP_ENABLE}
+              - name: SMTP_HOST
+                value: ${SMTP_HOST}
+              - name: SMTP_PORT
+                value: ${SMTP_PORT}
+              - name: SMTP_USER
+                value: ${SMTP_PORT}
+              - name: SMTP_PASSWORD
+                value: ${SMTP_PASSWORD}
+              - name: SMTP_CONNECTION_MODE
+                value: ${SMTP_CONNECTION_MODE}                                                                                               
+            image: 'docker.io/bitnami/testlink:latest'
+            imagePullPolicy: IfNotPresent
+            name: testlink
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 80
+              timeoutSeconds: 1
+            livenessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 30
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 80
+              timeoutSeconds: 1              
+            resources:
+              limits:
+                cpu: '1'
+                memory: 1Gi
+              requests:
+                cpu: 500m
+                memory: 500Mi
+            initContainers:
+              name: init-scheduler
+              image: busybox
+              command: ['sh', '-c', 'until nslookup mysql-testlink ; do echo waiting for apache-kafka elasticsearch; sleep 2; done;']
+              restartPolicy: Always
+            ports:
+              - containerPort: 80
+                protocol: TCP
+              - containerPort: 443
+                protocol: TCP
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: testlink
+        serviceAccountName: testlink
+        terminationGracePeriodSeconds: 30
+    test: false
+    triggers:
+      - type: ConfigChange
+- kind: Service
+  apiVersion: v1
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftWebConsole
+    labels:
+      app: testlink
+    name: testlink
+  spec:
+    ports:
+      - name: 80-tcp
+        port: 80
+        protocol: TCP
+        targetPort: 80
+      - name: 443-tcp
+        port: 443
+        protocol: TCP
+        targetPort: 443
+    selector:
+      deploymentconfig: testlink
+    sessionAffinity: None
+    type: ClusterIP
+- kind: Route
+  apiVersion: route.openshift.io/v1
+  metadata:
+    annotations:
+      openshift.io/host.generated: 'true'
+    labels:
+      app: testlink
+    name: testlink
+  spec:
+    port:
+      targetPort: 80-tcp
+    to:
+      kind: Service
+      name: testlink
+      weight: 100
+    wildcardPolicy: None
+
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: testlink
+    labels:
+      app: "testlink"
+      serviceAccount: "testlink"
+
+parameters:
+- description: 默认管理员用户名为：user
+  displayName: TestLink管理员用户名
+  name: TESTLINK_ADMIN_USERNAME
+- description: 默认管理员用户名为：bitnami
+  displayName: TestLink管理员用户名密码
+  name: TESTLINK_ADMIN_PASSWORD
+- description: 默认管理员用户邮箱为：user@example.com
+  displayName: TestLink管理员用户邮箱
+  name: TESTLINK_ADMIN_EMAIL
+- description: 默认语言为：en_US
+  displayName: TestLink语言，支持de_DE, es_AR, fr_FR, ja_JP, pl_PL, en_GB, es_ES, id_ID, ko_KR, pt_BR, zh_CN, cs_CZ, en_US, fi_FI, it_IT, nl_NL, ru_RU等语言
+  name: TESTLINK_LANGUAGE
+  value: zh_CN
+- description: Enable SMTP mail delivery
+  displayName: 是否开启TestLink使用SMTP邮件服务器发送邮件
+  name: SMTP_ENABLE
+- description: SMTP host
+  displayName: SMTP邮件服务器地址
+  name: SMTP_HOST
+- description: SMTP port
+  displayName: SMTP邮件服务器端口
+  name: SMTP_PORT
+- description: SMTP account user
+  displayName: SMTP邮件服务器用户
+  name: SMTP_USER
+- description: SMTP account password
+  displayName: SMTP邮件服务器用户密码
+  name: SMTP_PASSWORD     
+- description: SMTP connection mode, ssl or tls
+  displayName: SMTP邮件服务器的连接方式
+  name: SMTP_CONNECTION_MODE

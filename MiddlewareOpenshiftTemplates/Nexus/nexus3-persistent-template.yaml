@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Template
 labels:
-  template: nexus2-template
+  template: nexus3-persistent-template
 metadata:
-  name: nexus2
+  name: nexus3-persistent
   annotations:
-    description: Sonatype Nexus 2 template
+    description: Sonatype Nexus 3 persistent template
     tags: ci,nexus
 objects:
 - apiVersion: v1
@@ -18,7 +18,7 @@ objects:
     tags:
     - from:
         kind: DockerImage
-        name: docker.io/sonatype/nexus:${NEXUS_VERSION}
+        name: docker.io/sonatype/nexus3:${NEXUS_VERSION}
       name: ${NEXUS_VERSION}
 - apiVersion: v1
   kind: DeploymentConfig
@@ -31,21 +31,11 @@ objects:
     selector:
       deploymentconfig: ${SERVICE_NAME}
     strategy:
-      rollingParams:
-        intervalSeconds: 1
-        maxSurge: 25%
-        maxUnavailable: 0
+      activeDeadlineSeconds: 21600
+      recreateParams:
         timeoutSeconds: 600
-        updatePeriodSeconds: 1
-        post:
-          failurePolicy: Abort
-          execNewPod:
-            containerName: ${SERVICE_NAME}
-            command:
-              - "/bin/bash"
-              - "-c"
-              - "curl -o /tmp/nexus-functions -s https://raw.githubusercontent.com/OpenShiftDemos/nexus/master/scripts/nexus-functions; source /tmp/nexus-functions; add_nexus2_redhat_repos admin admin123 http://${SERVICE_NAME}:8081"
-      type: Rolling
+      resources: {}
+      type: Recreate
     template:
       metadata:
         labels:
@@ -74,7 +64,7 @@ objects:
           readinessProbe:
             failureThreshold: 3
             httpGet:
-              path: /content/groups/public
+              path: /
               port: 8081
               scheme: HTTP
             initialDelaySeconds: 30
@@ -88,7 +78,7 @@ objects:
               memory: 512Mi
           terminationMessagePath: /dev/termination-log
           volumeMounts:
-          - mountPath: /sonatype-work
+          - mountPath: /nexus-data
             name: ${SERVICE_NAME}-data
         dnsPolicy: ClusterFirst
         restartPolicy: Always
@@ -96,7 +86,8 @@ objects:
         terminationGracePeriodSeconds: 30
         volumes:
         - name: ${SERVICE_NAME}-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: ${SERVICE_NAME}-pv
     test: false
     triggers:
     - type: ConfigChange
@@ -137,6 +128,18 @@ objects:
       kind: Service
       name: ${SERVICE_NAME}
       weight: 100
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    labels:
+      app: ${SERVICE_NAME}
+    name: ${SERVICE_NAME}-pv
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${VOLUME_CAPACITY}
 parameters:
 - displayName: Sonatype Nexus service name
   name: SERVICE_NAME
@@ -145,7 +148,12 @@ parameters:
 - displayName: Sonatype Nexus version
   name: NEXUS_VERSION
   required: true
-  value: 2.14.5
+  value: 3.15.2
+- description: Volume space available for Sonatype Nexus e.g. 512Mi, 2Gi
+  displayName: Volume Space for Nexus
+  name: VOLUME_CAPACITY
+  required: true
+  value: 20Gi
 - description: Max memory allocated to the Nexus pod
   displayName: Max Memory
   name: MAX_MEMORY

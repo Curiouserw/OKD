@@ -39,8 +39,6 @@ objects:
         labels:
           app: consul-server
       spec:
-        terminationGracePeriodSeconds: 10
-        serviceAccountName: consul-server
         containers:
           - name: consul
             image: consul:${CONSUL_VERSION}
@@ -56,6 +54,7 @@ objects:
                   -client=0.0.0.0 \
                   -datacenter=Curiouser \
                   -data-dir=/consul/data \
+                  -config-dir=/consul/config \
                   -ui \
                   -disable-host-node-id \
                   -node-id=$(uuidgen | awk '{print tolower($0)}') \
@@ -66,6 +65,8 @@ objects:
             volumeMounts:
               - name: consul-data
                 mountPath: /consul/data
+              - mountPath: /consul/config
+                name: config
             lifecycle:
               preStop:
                 exec:
@@ -116,6 +117,13 @@ objects:
               requests:
                 cpu: 500m
                 memory: 500Mi
+        terminationGracePeriodSeconds: 10
+        serviceAccountName: consul-server
+        volumes:
+          - configMap:
+              defaultMode: 420
+              name: consul-server-config
+            name: config
     volumeClaimTemplates:
       - metadata:
           name: consul-data
@@ -125,7 +133,22 @@ objects:
           resources:
             requests:
               storage: ${CONSUL_DATA_SIZE}
-# ================= Consul ServiceAccount =======================
+
+# ================= Consul Config ===================================
+- kind: ConfigMap
+  apiVersion: v1
+  metadata:
+    name: consul-server-config
+    namespace: consul
+  data:
+    extra-from-values.json: |-
+      {
+        "telemetry": {
+          "prometheus_retention_time": "60s",
+          "disable_hostname": true
+        }
+      }
+# ================= Consul ServiceAccount ===========================
 - kind: ServiceAccount
   apiVersion: v1
   metadata:

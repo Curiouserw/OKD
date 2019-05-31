@@ -85,7 +85,7 @@ objects:
           value: ${TargetDir}
         from:
           kind: DockerImage
-          name: 'docker.io/curiouser/okd-s2i-javamaven:v1'
+          name: 'docker.io/curiouser/okd-s2i-javamaven:v2'
       type: Source
     triggers:
     - type: ImageChange

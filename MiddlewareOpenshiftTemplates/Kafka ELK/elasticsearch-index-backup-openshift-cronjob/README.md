@@ -1,6 +1,6 @@
 ### OKD CronJob to backup elasticsearch index to repository
 
-## 一. elasticsearch in OKD use PV as snapshots repository 
+## 一. Elasticsearch in openshift use PVC as snapshots filesystem repository path 
 
 1. Create repository pvc to mount on all elasticsearch node path: "/usr/share/elasticsearch/snapshots-repository"
 

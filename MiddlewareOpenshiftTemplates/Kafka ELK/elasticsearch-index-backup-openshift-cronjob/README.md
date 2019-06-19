@@ -4,7 +4,7 @@
 
 1. Create repository pvc to mount on all elasticsearch node path: "/usr/share/elasticsearch/snapshots-repository"
 
-   ![](C:\Users\Curiouser\Desktop\GitHub\openshift\MiddlewareOpenshiftTemplates\Kafka ELK\elasticsearch-index-backup-openshift-cronjob\Pictures\OKD-es-pvc-env-mount.png)
+   ![](Pictures\OKD-es-pvc-env-mount.png)
 
 2. Add System environment variable "path.repo=/usr/share/elasticsearch/snapshots-repository" to all elasticsearch node, and reboot elasticsearch
 
@@ -31,6 +31,7 @@
    }'
    ```
 
+![](Pictures\kibaba-api.png)
 
 ## 二. Create a OKD Cronjob which use the image include a script to back up  the index which create time more than 2 days (not including index which beginning with ". ", it mean dont backup system index)  to the "pvc-snap-repo" snapshots repository , the cronjob wile start 01:00 every day
 

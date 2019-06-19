@@ -1,0 +1,22 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: backup-es-index-cronjob
+  namespace: kelk
+spec:
+  schedule: "0 1 * * *"
+  jobTemplate:             
+    spec:
+      template:
+        metadata:
+          labels:          
+            parent: "backup-es-index-cronjob"
+        spec:
+          containers:
+          - name: backup-es-index-cronjob
+            image: docker-registry.default.svc:5000/openshift/backup-es-index-cronjob:v1
+            imagePullPolicy: Always
+            env:
+            - name: TZ
+              value: Asia/Shanghai 
+          restartPolicy: OnFailure 

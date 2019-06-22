@@ -280,7 +280,7 @@ objects:
       requests:
         storage: ${SONAR_EXTENSIONS_VOLUME_CAPACITY}
 parameters:
-- displayName: SonarQube version
+- displayName: SonarQube version.Available Version:5.6.6/6.7.0/7.0/7.3
   value: "6.7"
   name: SONARQUBE_VERSION
   required: true
@@ -304,4 +304,4 @@ parameters:
   displayName: SonarQube Extensions Volume Capacity
   name: SONAR_EXTENSIONS_VOLUME_CAPACITY
   required: true
-  value: 10Gi
+  value: 5Gi

@@ -134,8 +134,6 @@ objects:
 - kind: DeploymentConfig
   apiVersion: apps.openshift.io/v1
   metadata:
-    annotations:
-      openshift.io/generated-by: OpenShiftWebConsole
     labels:
       app: logstash
     name: logstash
@@ -288,14 +286,22 @@ objects:
           - env:
               - name: discovery.type
                 value: single-node
+              - name: cluster.name
+                value: curiouser
+              - name: bootstrap.memory_lock
+                value: 'true'
+              - name: path.repo
+                value: /usr/share/elasticsearch/snapshots-repository
+              - name: TZ
+                value: Asia/Shanghai
               - name: ES_JAVA_OPTS
-                value: "-Xms1g -Xmx1g"
+                value: '-Xms1g -Xmx2g'
               - name: xpack.monitoring.collection.enabled
                 value: 'true'
-              - name: cluster.name
-                value: curiouser-elasticsearch
-            image: 'docker.io/elasticsearch:6.6.0'
-            imagePullPolicy: Always
+              - name: xpack.security.enabled
+                value: 'true'
+            image: 'docker.elastic.co/elasticsearch/elasticsearch:7.1.1'
+            imagePullPolicy: IfNotPresent
             name: elasticsearch
             ports:
               - containerPort: 9200
@@ -306,7 +312,9 @@ objects:
             terminationMessagePolicy: File
             volumeMounts:
               - mountPath: /usr/share/elasticsearch/data
-                name: volume-elasticsearch-data
+                name: elasticsearch-data
+              - mountPath: /usr/share/elasticsearch/snapshots-repository
+                name: elasticsearch-snapshots-repository
             readinessProbe:
               failureThreshold: 3
               initialDelaySeconds: 60
@@ -317,20 +325,23 @@ objects:
               timeoutSeconds: 1
             resources:
               limits:
-                cpu: '1'
-                memory: 2G
+                cpu: '2'
+                memory: 3Gi
               requests:
                 cpu: '1'
-                memory: 1G
+                memory: 2Gi
         dnsPolicy: ClusterFirst
         restartPolicy: Always
         schedulerName: default-scheduler
         securityContext: {}
         terminationGracePeriodSeconds: 30
         volumes:
-          - name: volume-elasticsearch-data
+          - name: elasticsearch-data
             persistentVolumeClaim:
-              claimName: pvc-elasticsearch-data
+              claimName: elasticsearch-data
+          - name: elasticsearch-snapshots-repository
+            persistentVolumeClaim:
+              claimName: elasticsearch-snapshots-repository
     test: false
     triggers:
       - type: ConfigChange
@@ -338,8 +349,6 @@ objects:
 - kind: Service
   apiVersion: v1
   metadata:
-    annotations:
-      openshift.io/generated-by: OpenShiftWebConsole
     labels:
       app: elasticsearch
     name: elasticsearch
@@ -362,16 +371,28 @@ objects:
 - kind: PersistentVolumeClaim
   apiVersion: v1
   metadata:
-    name: pvc-elasticsearch-data
-    labels:
-      app: elasticsearch
-      PersistentVolumeClaim: elasticsearch
+    annotations:
+      volume.beta.kubernetes.io/storage-class: nfs-client-storageclass
+    name: elasticsearch-data
   spec:
     accessModes:
-    - ReadWriteOnce
+      - ReadWriteOnce
     resources:
       requests:
-        storage: "10Gi"
+        storage: 20Gi
+- kind: PersistentVolumeClaim
+  apiVersion: v1
+  metadata:
+    annotations:
+      volume.beta.kubernetes.io/storage-class: nfs-client-storageclass
+    name: elasticsearch-snapshots-repository
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20Gi
+
 #===================================Kibana DC==============================          
 - kind: DeploymentConfig
   apiVersion: v1

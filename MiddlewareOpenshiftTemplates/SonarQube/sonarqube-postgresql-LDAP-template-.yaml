@@ -1,0 +1,369 @@
+kind: Template
+apiVersion: v1
+metadata:
+  annotations:
+    description: The SonarQube OpenShift template
+    tags: instant-app,sonarqube
+  name: sonarqube
+message: "Login to SonarQube with the default admin user: admin/admin"
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: sonarqube
+    labels:
+      app: sonarqube
+  spec:
+    ports:
+    - name: sonarqube
+      port: 9000
+      protocol: TCP
+      targetPort: 9000
+    selector:
+      app: sonarqube
+      deploymentconfig: sonarqube
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: Route
+  metadata:
+    annotations:
+      description: Route for SonarQube's http service.
+    name: sonarqube
+    labels:
+      app: sonarqube
+  spec:
+    to:
+      kind: Service
+      name: sonarqube
+- apiVersion: v1
+  kind: ImageStream
+  metadata:
+    labels:
+      app: sonarqube
+    name: sonarqube
+  spec:
+    tags:
+    - annotations:
+        description: The SonarQube Docker image
+        tags: sonarqube
+      from:
+        kind: DockerImage
+        name: docker.io/sonarqube:${SONARQUBE_VERSION}
+      importPolicy: {}
+      name: ${SONARQUBE_VERSION}
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: sonarqube
+      deploymentconfig: sonarqube
+    name: sonarqube
+  spec:
+    replicas: 1
+    selector:
+      app: sonarqube
+      deploymentconfig: sonarqube
+    strategy:
+      activeDeadlineSeconds: 21600
+      recreateParams:
+        timeoutSeconds: 600
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        annotations:
+          openshift.io/container.sonarqube.image.entrypoint: '["./bin/run.sh"]'
+        creationTimestamp: null
+        labels:
+          app: sonarqube
+          deploymentconfig: sonarqube
+      spec:
+        containers:
+        - env:
+          - name: sonar.jdbc.password
+            value: ${POSTGRESQL_PASSWORD}
+          - name: sonar.jdbc.url
+            value: jdbc:postgresql://postgresql-sonarqube/sonar
+          - name: sonar.jdbc.username
+            value: sonar
+          - name: TZ
+            value: Asia/Shanghai
+          - name: sonar.security.realm
+            value: LDAP
+          - name: sonar.forceAuthentication
+            value: 'true'
+          - name: ldap.url
+            value: ${LADP_URL}
+          - name: ldap.bindDn
+            value: ${LDAP_BINDDN}
+          - name: ldap.bindPassword
+            value: ${LDAP_BINDDNPASSWORD}
+          - name: ldap.user.baseDn
+            value: ${LDAP_USER_BASEDN}
+          - name: ldap.user.request
+            value: ${LDAP_USER_REQUEST}
+          - name: ldap.user.realNameAttribute
+            value: ${LDAP_USER_REALNAMEATTRIBUTE}
+          - name: sonar.ce.javaOpts
+            value: ${JVM_CE}
+          - name: sonar.web.javaOpts
+            value: ${JVM_WEB}
+          image: ' '
+          imagePullPolicy: IfNotPresent
+          name: sonarqube
+          ports:
+          - containerPort: 9000
+            protocol: TCP
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            successThreshold: 1
+            httpGet:
+              port: 9000
+              path: /
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            successThreshold: 1
+            httpGet:
+              port: 9000
+              path: /
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: 1
+              memory: 2Gi
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /opt/sonarqube/data
+            name: sonarqube-data
+          - mountPath: /opt/sonarqube/extensions
+            name: sonarqube-extensions
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        serviceAccount: sonarqube
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: sonarqube-data
+          persistentVolumeClaim:
+            claimName: sonarqube-data
+        - name: sonarqube-extensions
+          persistentVolumeClaim:
+            claimName: sonarqube-extensions
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - sonarqube
+        from:
+          kind: ImageStreamTag
+          name: sonarqube:${SONARQUBE_VERSION}
+      type: ImageChange
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: sonarqube
+    labels:
+      app: sonarqube
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: postgresql-sonarqube
+    labels:
+      app: sonarqube
+  spec:
+    ports:
+    - name: postgresql
+      port: 5432
+      protocol: TCP
+      targetPort: 5432
+    selector:
+      app: sonarqube
+      deploymentconfig: postgresql-sonarqube
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: sonarqube
+      deploymentconfig: postgresql-sonarqube
+    name: postgresql-sonarqube
+  spec:
+    replicas: 1
+    selector:
+      app: sonarqube
+      deploymentconfig: postgresql-sonarqube
+    strategy:
+      recreateParams:
+        timeoutSeconds: 600
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: sonarqube
+          deploymentconfig: postgresql-sonarqube
+      spec:
+        containers:
+        - env:
+          - name: POSTGRESQL_USER
+            value: sonar
+          - name: POSTGRESQL_PASSWORD
+            value: ${POSTGRESQL_PASSWORD}
+          - name: POSTGRESQL_DATABASE
+            value: sonar
+          image: ' '
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: 5432
+            timeoutSeconds: 1
+          name: postgresql
+          ports:
+          - containerPort: 5432
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - /bin/sh
+              - -i
+              - -c
+              - psql -h 127.0.0.1 -U $POSTGRESQL_USER -q -d $POSTGRESQL_DATABASE -c 'SELECT 1'
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 512Mi
+          securityContext:
+            capabilities: {}
+            privileged: false
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+          - mountPath: /var/lib/pgsql/data
+            name: postgresql-data
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: postgresql-data
+          persistentVolumeClaim:
+            claimName: sonarqube-postgresql-data
+    test: false
+    triggers:
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - postgresql
+        from:
+          kind: ImageStreamTag
+          name: postgresql:9.5
+          namespace: openshift
+      type: ImageChange
+    - type: ConfigChange
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: sonarqube-postgresql-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${POSTGRESQL_VOLUME_CAPACITY}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: sonarqube-data
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${SONAR_VOLUME_CAPACITY}
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: sonarqube-extensions
+  spec:
+    accessModes:
+    - ReadWriteOnce
+    resources:
+      requests:
+        storage: ${SONAR_EXTENSIONS_VOLUME_CAPACITY}
+parameters:
+- displayName: SonarQube version.
+  description: "Like: 7.4-community, 7.8-community, 7.9-community"
+  value: "latest"
+  name: SONARQUBE_VERSION
+  required: true
+- description: Password for SonarQube Server PostgreSQL
+  displayName: SonarQube's PostgreSQL Password
+  from: '[a-zA-Z0-9]{16}'
+  generate: expression
+  name: POSTGRESQL_PASSWORD
+  required: true
+- description: Volume space available for PostgreSQL
+  displayName: PostgreSQL Volume Capacity
+  name: POSTGRESQL_VOLUME_CAPACITY
+  required: true
+  value: 10Gi
+- description: Volume space available for SonarQube
+  displayName: SonarQube Volume Capacity
+  name: SONAR_VOLUME_CAPACITY
+  required: true
+  value: 10Gi
+- description: Volume space available for SonarQube Extensions
+  displayName: SonarQube Extensions Volume Capacity
+  name: SONAR_EXTENSIONS_VOLUME_CAPACITY
+  required: true
+  value: 5Gi
+- displayName: ldap.url
+  description: "URL of the LDAP server.Like: ldap://localhost:389"
+  name: LADP_URL
+  required: true
+- displayName: ldap.bindDn
+  description: "Bind DN is the username of an LDAP user to connect (or bind) with. Leave this blank for anonymous access to the LDAP directory. Like: cn=admin,dc=example,dc=com"
+  name: LDAP_BINDDN
+  required: true
+- displayName: ldap.bindPassword
+  description: "Bind Password is the password of the user to connect with. Leave this blank for anonymous access to the LDAP directory."
+  name: LDAP_BINDDNPASSWORD
+  required: true
+- displayName: ldap.user.baseDn
+  description: "Distinguished Name (DN) of the root node in LDAP from which to search for users. Like: ou=employee,dc=example,dc=com"
+  name: LDAP_USER_BASEDN
+  required: true
+- displayName: ldap.user.request
+  description: "Filter fields of the User DN  to match. Like: (&(memberOf=cn=sonarqube,ou=applications,dc=curiouser,dc=com)(cn={0}))"
+  value: "(&(objectClass=inetOrgPerson)(uid={login}))"
+  name: LDAP_USER_REQUEST
+  required: true
+- displayName: ldap.user.realNameAttribute
+  description: "Attribute in LDAP defining the user’s real name. Like: use the value of 'sn' Attribute as sonarqube username"
+  value: "cn"
+  name: LDAP_USER_REALNAMEATTRIBUTE
+  required: true
+- displayName: sonar.ce.javaOpts
+  description: "Set sonarqube ce jvm options. Like: -Xmx1024m -Xms512m -XX:+HeapDumpOnOutOfMemoryError"
+  name: JVM_CE
+- displayName: sonar.web.javaOpts
+  description: "Set sonarqube web jvm options. Like: -Xmx1024m -Xms512m -XX:+HeapDumpOnOutOfMemoryError"
+  name: JVM_WEB

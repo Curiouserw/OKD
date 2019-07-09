@@ -42,6 +42,10 @@
 - **ELASTICSEARCH_SNAPSHOTS_REPOSITORY**：需要备份过期Index到elasticsearch的哪个snapshot repository
 - **ELASTICSEARCH_INDEX_EXPIRYDATE**：备份多长时间外的Index（从Index的创建日期距离脚本执行时的时间）到snapshots仓库中
   
+elasticsearch的用户需要以下权限
+![](Pictures/elasticsearch用户的权限.png)
+  
+  
    ```shell
    oc create -f OKD-Backup-ES-Index-Scripts-CronJob.yaml 
    

@@ -29,6 +29,15 @@ parameters:
 - description: Defaults to config
   displayName: OpenLDAP Config  password
   name: OPENLDAP_CONFIG_PASSWORD
+- description: Defaults to false
+  displayName: Add a read only user.
+  name: OPENLDAP_READONLY_USER
+- description: Defaults to readonly
+  displayName: Read only user username.
+  name: OPENLDAP_READONLY_USER_USERNAME
+- description: Defaults to readonly.
+  displayName: Read only user password.
+  name: OPENLDAP_READONLY_USER_PASSWORD
 objects:
 #---------------------------------OpenLDAP  DC ---------------------------------
 - kind: DeploymentConfig
@@ -112,6 +121,11 @@ objects:
         labels:
           app: phpldapadmin
       spec:
+        initContainers:
+          - name: init-scheduler
+            image: busybox
+            command: ['sh', '-c', 'until nc -znv openldap-service 389; do echo waiting for OpenLDAP Server to be up; sleep 5; done;']
+            restartPolicy: Always
         containers:
         - name: phpldapadmin
           env:
@@ -157,8 +171,12 @@ objects:
     LDAP_BASE_DN: ${OPENLDAP_BASE_DN}
     LDAP_ADMIN_PASSWORD: ${OPENLDAP_ADMIN_PASSWORD}
     LDAP_CONFIG_PASSWORD: ${OPENLDAP_CONFIG_PASSWORD}
+    LDAP_READONLY_USER: ${OPENLDAP_READONLY_USER}
+    LDAP_READONLY_USER_USERNAME: ${OPENLDAP_READONLY_USER_USERNAME}
+    LDAP_READONLY_USER_PASSWORD: ${OPENLDAP_READONLY_USER_PASSWORD}
 
-#---------------------------------PHP-LDAP-Admin  SVC ---------------------------------
+
+  #---------------------------------PHP-LDAP-Admin  SVC ---------------------------------
 - kind: Service
   apiVersion: v1
   metadata:

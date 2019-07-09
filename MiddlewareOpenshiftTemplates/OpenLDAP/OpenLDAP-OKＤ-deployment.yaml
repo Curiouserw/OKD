@@ -160,6 +160,7 @@ objects:
               cpu: 100m
               memory: 100Mi
         restartPolicy: Always
+        serviceAccount: openldap
 #---------------------------------OpenLDAP  Secret ---------------------------------
 - kind: Secret
   apiVersion: v1
@@ -259,6 +260,8 @@ objects:
     resources:
       requests:
         storage: 10Mi
+
+#---------------------------------OpenLDAP  ServiceAccount ---------------------------------
 - kind: ServiceAccount
   apiVersion: v1
   metadata:

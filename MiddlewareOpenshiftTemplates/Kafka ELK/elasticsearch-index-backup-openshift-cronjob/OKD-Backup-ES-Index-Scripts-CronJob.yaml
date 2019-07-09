@@ -15,7 +15,7 @@ spec:
         spec:
           containers:
             - name: backup-es-index-cronjob
-              image: docker-registry.default.svc:5000/openshift/backup-es-index-cronjob:v2
+              image: docker.io/curiouser/backup-es-index-cronjob:v1
               imagePullPolicy: Always
               env:
                 - name: TZ

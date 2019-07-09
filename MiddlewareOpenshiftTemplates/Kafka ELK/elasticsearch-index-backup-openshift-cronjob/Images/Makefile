@@ -1,4 +1,4 @@
-IMAGE_BASE=docker-registry-default.apps.okd311.curiouser.com/openshift
+IMAGE_BASE=docker.io/curiouser
 IMAGE_NAME=backup-es-index-cronjob
 IMAGE_VERSION=v1
 

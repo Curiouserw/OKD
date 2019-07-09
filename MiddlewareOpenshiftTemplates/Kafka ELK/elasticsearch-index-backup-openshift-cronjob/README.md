@@ -34,7 +34,14 @@
 ![](Pictures/kibaba-api.png)
 
 ## 二. Create a OKD Cronjob which use the image include a script to back up  the index created time more than 2 days (not including index which beginning with ". ", it mean dont backup system index)  to the "pvc-snap-repo" snapshots repository , the cronjob will start to run at 01:00 every day
-
+备份的CronJob需要配置以下环境变量
+- **ELASTICSEARCH_HOST**：elasticsearch的地址
+- **ELASTICSEARCH_USERNAME**：elasticsearch的用户
+- **ELASTICSEARCH_PASSWORD**：elasticsearch的用户密码
+- **ELASTICSEARCH_EXCLUDE_INDEX**：指定哪些Index不要备份。（可使用正则表达式进行模糊匹配，例如：".*"）
+- **ELASTICSEARCH_SNAPSHOTS_REPOSITORY**：需要备份过期Index到elasticsearch的哪个snapshot repository
+- **ELASTICSEARCH_INDEX_EXPIRYDATE**：备份多长时间外的Index（从Index的创建日期距离脚本执行时的时间）到snapshots仓库中
+  
    ```shell
    oc create -f OKD-Backup-ES-Index-Scripts-CronJob.yaml 
    

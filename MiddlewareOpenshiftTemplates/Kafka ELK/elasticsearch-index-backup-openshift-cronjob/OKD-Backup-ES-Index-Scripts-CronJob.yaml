@@ -4,19 +4,39 @@ metadata:
   name: backup-es-index-cronjob
   namespace: kelk
 spec:
-  schedule: "0 1 * * *"
-  jobTemplate:             
+  schedule: "0/3 * * * *"
+  startingDeadlineSeconds: 200
+  jobTemplate:
     spec:
       template:
         metadata:
-          labels:          
+          labels:
             parent: "backup-es-index-cronjob"
         spec:
           containers:
-          - name: backup-es-index-cronjob
-            image: docker-registry.default.svc:5000/openshift/backup-es-index-cronjob:v1
-            imagePullPolicy: Always
-            env:
-            - name: TZ
-              value: Asia/Shanghai 
-          restartPolicy: OnFailure 
+            - name: backup-es-index-cronjob
+              image: docker-registry.default.svc:5000/openshift/backup-es-index-cronjob:v2
+              imagePullPolicy: Always
+              env:
+                - name: TZ
+                  value: Asia/Shanghai
+                - name: ELASTICSEARCH_HOST
+                  value: "elasticsearch.kelk.svc"
+                - name: ELASTICSEARCH_USERNAME
+                  value: "cronjob"
+                - name: ELASTICSEARCH_PASSWORD
+                  value: "cronjob"
+                - name: ELASTICSEARCH_INDEX_EXPIRYDATE
+                  value: '172800'
+                - name: ELASTICSEARCH_EXCLUDE_INDEX
+                  value: ".*"
+                - name: ELASTICSEARCH_SNAPSHOTS_REPOSITORY
+                  value: "pvc-snap-repo"
+              resources:
+                requests:
+                  memory: "500Mi"
+                  cpu: "300m"
+                limits:
+                  memory: "800Mi"
+                  cpu: "600m"
+          restartPolicy: OnFailure

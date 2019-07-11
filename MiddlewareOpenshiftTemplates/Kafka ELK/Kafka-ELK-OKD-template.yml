@@ -161,7 +161,8 @@ objects:
       spec:
         initContainers:
           - name: init-scheduler
-            image: busybox
+            image: docker.io/busybox:latest
+            imagePullPolicy: IfNotPresent
             command: ['sh', '-c', 'until nc -znv apache-kafka 2181 && nc -znv apache-kafka 9092 && nc -znv elasticsearch  9200; do echo waiting for apache-kafka and elasticsearch  all to be up; sleep 5; done;']
             restartPolicy: Always
         containers:

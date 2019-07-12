@@ -93,7 +93,7 @@ objects:
                 claimName: "${APPLICATION_NAME}-data"
           containers:
             - name: gitlab-ce
-              image: docker.io/gitlab/gitlab-ce:12.0.2-ce.0
+              image: docker.io/gitlab/gitlab-ce:${GITLAB_CE_VERSION}
               ports:
                 - containerPort: 31586
                   protocol: TCP
@@ -117,7 +117,7 @@ objects:
                     gitlab_rails['redis_host']='${APPLICATION_NAME}-redis';
                     unicorn['worker_processes'] = ${UNICORN_WORKERS};
                     manage_accounts['enable'] = true;
-                    manage_storage_directories['manage_etc'] = false;
+                    manage_storage_directories['manage_etc'] = true;
                     gitlab_shell['auth_file'] = '/gitlab-data/ssh/authorized_keys';
                     git_data_dirs({ 'default' => { 'path' => '/gitlab-data/git-data' } });
                     gitlab_rails['shared_path'] = '/gitlab-data/shared';
@@ -125,7 +125,7 @@ objects:
                     gitlab_ci['builds_directory'] = '/gitlab-data/builds';
                     prometheus_monitoring['enable'] = true;
                     gitlab_rails['ldap_enabled'] = true;
-                    gitlab_rails['ldap_servers'] = { 'main' => { 'label' => '${LDAP_LABEL}', 'host' => '${LDAP_HOST}', 'port' => '${LDAP_PORT}', 'uid' => 'uid', 'bind_dn' => '${LDAP_BIND_DN}', 'password' => '${LDAP_PASSWORD}', 'encryption' => '${LDAP_ENCRYPTION}', 'verify_certificates' => ${LDAP_VERIFY_CERTIFICATE}, 'allow_username_or_email_login' => true, 'block_auto_created_users' => false, 'active_directory' => false, 'base' => '${LDAP_BASE}', 'user_filter' => '${LDAP_USER_FILTER}', 'attributes' => { 'username' => ['cn'], 'email' => ['mail'], 'name' => 'sn' } } };
+                    gitlab_rails['ldap_servers'] = { 'main' => { 'label' => '${LDAP_LABEL}', 'host' => '${LDAP_HOST}', 'port' => '${LDAP_PORT}', 'uid' => 'cn', 'bind_dn' => '${LDAP_BIND_DN}', 'password' => '${LDAP_PASSWORD}', 'encryption' => '${LDAP_ENCRYPTION}', 'verify_certificates' => ${LDAP_VERIFY_CERTIFICATE}, 'allow_username_or_email_login' => true, 'block_auto_created_users' => false, 'active_directory' => false, 'base' => '${LDAP_BASE}', 'user_filter' => '${LDAP_USER_FILTER}', 'attributes' => { 'username' => ['cn'], 'email' => ['mail'], 'name' => 'sn' } } };
                     gitlab_rails['rack_attack_git_basic_auth'] = { 'enabled' => false, };
               resources:
                 limits:
@@ -134,6 +134,22 @@ objects:
                 requests:
                   cpu: 500m
                   memory: 1Gi
+              readinessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 80
+                timeoutSeconds: 2
+              livenessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 120
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 80
+                timeoutSeconds: 2
               volumeMounts:
                 - name: gitlab-ce-volume-1
                   mountPath: "/etc/gitlab"
@@ -414,6 +430,10 @@ objects:
         targetPort: 80-http
       wildcardPolicy: None
 parameters:
+  - description: The version of gitlab-ce to deploy
+    displayName: Gitlab CE Version. (11.9.1-ce.0, 12.0.2-ce.0,etc)
+    name: GITLAB_CE_VERSION
+    value: 12.0.2-ce.0
   - description: A label that will be seen by the user at login
     displayName: LDAP label.
     name: LDAP_LABEL

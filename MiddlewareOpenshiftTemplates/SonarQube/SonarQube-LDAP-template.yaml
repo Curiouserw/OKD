@@ -103,7 +103,7 @@ objects:
             - name: init-scheduler
               image: docker.io/busybox:latest
               imagePullPolicy: IfNotPresent
-              command: ['sh', '-c', 'mkdir -p /opt/sonarqube/extensions/plugins && if [ ! -f /opt/sonarqube/extensions/plugins/sonar-ldap-plugin-2.2.0.608.jar ] ;then wget https://raw.githubusercontent.com/RationalMonster/OKD/master/MiddlewareOpenshiftTemplates/SonarQube/plugins/sonar-ldap-plugin-2.2.0.608.jar -P /opt/sonarqube/extensions/plugins ; fi && chown -R sonarqube:sonarqube /opt/sonarqube/extensions/plugins && until nc -znv postgresql-sonarqube 5432 ; do echo waiting for postgresql-sonarqube  to be up; sleep 5; done;']
+              command: ['sh', '-c', 'mkdir -p /opt/sonarqube/extensions/plugins && if [ ! -f /opt/sonarqube/extensions/plugins/sonar-ldap-plugin-2.2.0.608.jar ] ;then wget https://raw.githubusercontent.com/RationalMonster/OKD/master/MiddlewareOpenshiftTemplates/SonarQube/plugins/sonar-ldap-plugin-2.2.0.608.jar -P /opt/sonarqube/extensions/plugins && chown -R sonarqube:sonarqube /opt/sonarqube/extensions/plugins ; fi && until nc -znv postgresql-sonarqube 5432 ; do echo waiting for postgresql-sonarqube  to be up; sleep 5; done;']
               restartPolicy: Always
               volumeMounts:
                 - mountPath: /opt/sonarqube/extensions

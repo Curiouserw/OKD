@@ -103,7 +103,7 @@ objects:
             - name: init-scheduler
               image: docker.io/busybox:latest
               imagePullPolicy: IfNotPresent
-              command: ['sh', '-c', 'mkdir /opt/sonarqube/extensions/plugins && wget -q https://raw.githubusercontent.com/RationalMonster/OKD/master/MiddlewareOpenshiftTemplates/SonarQube/plugins/sonar-ldap-plugin-2.2.0.608.jar -D /opt/sonarqube/extensions/plugins && until nc -znv postgresql-sonarqube 5432 ; do echo waiting for postgresql-sonarqube  to be up; sleep 5; done;']
+              command: ['sh', '-c', 'mkdir -p /opt/sonarqube/extensions/plugins && if [ ! -f /opt/sonarqube/extensions/plugins/sonar-ldap-plugin-2.2.0.608.jar ] ;then wget https://raw.githubusercontent.com/RationalMonster/OKD/master/MiddlewareOpenshiftTemplates/SonarQube/plugins/sonar-ldap-plugin-2.2.0.608.jar -P /opt/sonarqube/extensions/plugins ; fi && until nc -znv postgresql-sonarqube 5432 ; do echo waiting for postgresql-sonarqube  to be up; sleep 5; done;']
               restartPolicy: Always
               volumeMounts:
                 - mountPath: /opt/sonarqube/extensions
@@ -120,7 +120,7 @@ objects:
               protocol: TCP
             livenessProbe:
               failureThreshold: 3
-              initialDelaySeconds: 60
+              initialDelaySeconds: 80
               periodSeconds: 20
               successThreshold: 1
               httpGet:
@@ -129,7 +129,7 @@ objects:
               timeoutSeconds: 5
             readinessProbe:
               failureThreshold: 3
-              initialDelaySeconds: 60
+              initialDelaySeconds: 80
               periodSeconds: 20
               successThreshold: 1
               httpGet:
@@ -370,7 +370,7 @@ parameters:
     name: LDAP_USER_BASEDN
     required: true
   - displayName: ldap.user.request
-    description: "Filter fields of the User DN  to match. Like: (&(memberOf=cn=sonarqube,ou=applications,dc=curiouser,dc=com)(cn={0}))"
+    description: "Filter fields of the User DN  to match. Like: (&(memberOf=cn=sonarqube,ou=applications,dc=example,dc=com)(cn={0}))"
     value: "(&(objectClass=inetOrgPerson)(uid={login}))"
     name: LDAP_USER_REQUEST
     required: true

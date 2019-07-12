@@ -52,8 +52,6 @@ oc -n sonarqube process \
 # oc get po
 NAME                            READY     STATUS     RESTARTS   AGE
 postgresql-sonarqube-1-5pfg4    0/1       Running    0          6s
-postgresql-sonarqube-1-deploy   1/1       Running    0          10s
-sonarqube-1-deploy              1/1       Running    0          11s
 sonarqube-1-p9wbz               0/1       Init:0/1   0          7s
 
 # oc logs -f sonarqube-1-p9wbz -c init-scheduler

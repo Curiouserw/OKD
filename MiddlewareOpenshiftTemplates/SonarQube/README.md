@@ -39,7 +39,7 @@ oc -n sonarqube process \
     SONARQUBE_VERSION="7.9-community" \
     LADP_URL='ldap://openldap-service.openldap.svc:389' \
     LDAP_BINDDN='cn=admin,dc=example,dc=com' \
-    LDAP_BINDDNPASSWORD='*******' \
+    LDAP_BINDDNPASSWORD='******' \
     LDAP_USER_BASEDN='ou=employee,dc=example,dc=com' \
     LDAP_USER_REQUEST='(&(memberOf=cn=sonarqube,ou=applications,dc=example,dc=com)(cn={0}))' \
     LDAP_USER_REALNAMEATTRIBUTE='sn' \
@@ -47,7 +47,18 @@ oc -n sonarqube process \
     JVM_WEB='-Xmx1024m -Xms512m -XX:+HeapDumpOnOutOfMemoryError' \
     |oc create -f -
 ```
+## 查看日志
+```jshelllanguage
+# oc get po
+NAME                            READY     STATUS     RESTARTS   AGE
+postgresql-sonarqube-1-5pfg4    0/1       Running    0          6s
+postgresql-sonarqube-1-deploy   1/1       Running    0          10s
+sonarqube-1-deploy              1/1       Running    0          11s
+sonarqube-1-p9wbz               0/1       Init:0/1   0          7s
 
+# oc logs -f sonarqube-1-p9wbz -c init-scheduler
+# oc logs -f sonarqube-1-p9wbz
+```
 ## 删除创建的资源
 ```jshelllanguage
 oc delete project/sonarqube  scc/sonarqube-anyuid

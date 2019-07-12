@@ -103,8 +103,11 @@ objects:
             - name: init-scheduler
               image: docker.io/busybox:latest
               imagePullPolicy: IfNotPresent
-              command: ['sh', '-c', 'until  nc -znv postgresql-sonarqube 5432 ; do echo waiting for postgresql-sonarqube  to be up; sleep 5; done;']
+              command: ['sh', '-c', 'mkdir /opt/sonarqube/extensions/plugins && wget https://raw.githubusercontent.com/RationalMonster/OKD/master/MiddlewareOpenshiftTemplates/SonarQube/plugins/sonar-ldap-plugin-2.2.0.608.jar /opt/sonarqube/extensions/plugins && \until  nc -znv postgresql-sonarqube 5432 ; do echo waiting for postgresql-sonarqube  to be up; sleep 5; done;']
               restartPolicy: Always
+              volumeMounts:
+                - mountPath: /opt/sonarqube/extensions
+                  name: sonarqube-extensions
           containers:
           - envFrom:
               - secretRef:
@@ -325,7 +328,7 @@ parameters:
     description: Namespace name where Sonarqube will be deployed
     required: true
   - displayName: SonarQube version. Since 7.7-community,Integrated with LDAP Plugins and support to use environment to setp LDAP .
-    description: "7.7-community，7.8-community, 7.9-community"
+    description: "7.7-community，7.8-community, 7.9-community. Since 7.7-community, The image can use environment to configure LDAP ."
     value: "7.9-community"
     name: SONARQUBE_VERSION
     required: true

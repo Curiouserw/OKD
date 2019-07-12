@@ -123,9 +123,9 @@ objects:
                     gitlab_rails['shared_path'] = '/gitlab-data/shared';
                     gitlab_rails['uploads_directory'] = '/gitlab-data/uploads';
                     gitlab_ci['builds_directory'] = '/gitlab-data/builds';
-                    prometheus_monitoring['enable'] = true;
+                    prometheus_monitoring['enable'] = false;
                     gitlab_rails['ldap_enabled'] = true;
-                    gitlab_rails['ldap_servers'] = { 'main' => { 'label' => '${LDAP_LABEL}', 'host' => '${LDAP_HOST}', 'port' => '${LDAP_PORT}', 'uid' => 'cn', 'bind_dn' => '${LDAP_BIND_DN}', 'password' => '${LDAP_PASSWORD}', 'encryption' => '${LDAP_ENCRYPTION}', 'verify_certificates' => ${LDAP_VERIFY_CERTIFICATE}, 'allow_username_or_email_login' => true, 'block_auto_created_users' => false, 'active_directory' => false, 'base' => '${LDAP_BASE}', 'user_filter' => '${LDAP_USER_FILTER}', 'attributes' => { 'username' => ['cn'], 'email' => ['mail'], 'name' => 'sn' } } };
+                    gitlab_rails['ldap_servers'] = { 'main' => { 'label' => '${LDAP_LABEL}', 'host' => '${LDAP_HOST}', 'port' => '${LDAP_PORT}', 'uid' => '${LDAP_USER_UID}', 'bind_dn' => '${LDAP_BIND_DN}', 'password' => '${LDAP_PASSWORD}', 'encryption' => '${LDAP_ENCRYPTION}', 'verify_certificates' => ${LDAP_VERIFY_CERTIFICATE}, 'allow_username_or_email_login' => true, 'block_auto_created_users' => false, 'active_directory' => false, 'base' => '${LDAP_BASE}', 'user_filter' => '${LDAP_USER_FILTER}', 'attributes' => { 'username' => ['cn'], 'email' => ['mail'], 'name' => 'sn' } } };
                     gitlab_rails['rack_attack_git_basic_auth'] = { 'enabled' => false, };
               resources:
                 limits:
@@ -465,6 +465,11 @@ parameters:
     displayName: LDAP encryption type
     name: LDAP_ENCRYPTION
     value: plain
+  - description: Use which attribute of ldap items as search criteria.Default value:uid
+    displayName: LDAP USER UID
+    name: LDAP_USER_UID
+    required: true
+    value: 'cn'
   - description: LDAP Base
     displayName: LDAP Base
     name: LDAP_BASE

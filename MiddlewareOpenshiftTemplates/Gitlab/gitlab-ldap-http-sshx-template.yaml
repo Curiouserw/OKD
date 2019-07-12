@@ -95,7 +95,7 @@ objects:
             - name: gitlab-ce
               image: docker.io/gitlab/gitlab-ce:${GITLAB_CE_VERSION}
               ports:
-                - containerPort: 31586
+                - containerPort: ${GITLAB_CE_SSH_NODEPORT}
                   protocol: TCP
                 - containerPort: 80
                   protocol: TCP
@@ -105,7 +105,7 @@ objects:
                     external_url "http://${APPLICATION_HOSTNAME}/";
                     gitlab_rails['gitlab_https']=false;
                     gitlab_rails['gitlab_port']=80;
-                    gitlab_rails['gitlab_shell_ssh_port']=31586;
+                    gitlab_rails['gitlab_shell_ssh_port']=${GITLAB_CE_SSH_NODEPORT};
                     root_pass='${GITLAB_ROOT_PASSWORD}';
                     gitlab_rails['initial_root_password']=root_pass;
                     postgresql['enable']=false;
@@ -314,9 +314,11 @@ objects:
     spec:
       type: NodePort
       ports:
-        - port: 31586
-          nodePort: 31586
-          name: 31586-ssh
+        - name: 22-ssh
+          nodePort: ${GITLAB_CE_SSH_NODEPORT}
+          port: ${GITLAB_CE_SSH_NODEPORT}
+          protocol: TCP
+          targetPort: 22
       selector:
         app: "${APPLICATION_NAME}"
         deploymentconfig: "${APPLICATION_NAME}"
@@ -328,10 +330,6 @@ objects:
         app: "${APPLICATION_NAME}"
     spec:
       ports:
-        - name: 31586-ssh
-          protocol: TCP
-          port: 31586
-          targetPort: 31586
         - name: 80-http
           protocol: TCP
           port: 80
@@ -430,10 +428,20 @@ objects:
         targetPort: 80-http
       wildcardPolicy: None
 parameters:
+  - name: NAMESPACE
+    displayName: Namespace name where Gitlab CE will be deployed
+    description: Namespace name where Gitlab CE will be deployed
+    required: true
   - description: The version of gitlab-ce to deploy
-    displayName: Gitlab CE Version. (11.9.1-ce.0, 12.0.2-ce.0,etc)
+    displayName: Gitlab CE Version. (ex. 11.9.1-ce.0, 12.0.2-ce.0,etc)
     name: GITLAB_CE_VERSION
     value: 12.0.2-ce.0
+    required: true
+  - description: The nodeport service will open the port in all okd node to forward ssh socker connect.
+    displayName: The Port of Gitlab ssh Service should listen. (Try to be within the range of the Nodeport port allowed by OKD. Default. 30000-32767)
+    name: GITLAB_CE_SSH_NODEPORT
+    from: "^[3][0-9]{5}"
+    required: true
   - description: A label that will be seen by the user at login
     displayName: LDAP label.
     name: LDAP_LABEL
@@ -442,13 +450,13 @@ parameters:
     displayName: LDAP HOST
     name: LDAP_HOST
     required: true
-    value: 'openldap-service.openldap.svc'
   - description: The LDAP port
     displayName: LDAP port
     name: LDAP_PORT
     value: '389'
+    required: true
   - description: The LDAP bind dn
-    displayName: LDAP BIND_DN,(ex. cn=admin,dc=example,dc=com)
+    displayName: LDAP BIND_DN (ex. cn=admin,dc=example,dc=com)
     name: LDAP_BIND_DN
     required: true
   - description: The LDAP password
@@ -463,22 +471,24 @@ parameters:
     displayName: LDAP encryption type
     name: LDAP_ENCRYPTION
     value: plain
+    required: true
   - description: Use which attribute of ldap items as search criteria.Default value:uid
     displayName: LDAP USER UID
     name: LDAP_USER_UID
     required: true
-  - description: LDAP Base.(ex. ou=people,dc=example,dc=com)
+  - description: LDAP Base (ex. ou=people,dc=example,dc=com)
     displayName: LDAP Base
     name: LDAP_BASE
     required: false
   - description: LDAP User filter
     displayName: LDAP user filter
     name: LDAP_USER_FILTER
-    value: '(&(memberOf=cn=gitlab,ou=applications,dc=curiouser,dc=com))'
+    required: true
   - description: The name for the application. The service will be named like the application.
     displayName: Application name.
     name: APPLICATION_NAME
     value: gitlab-ce
+    required: true
   - description: Hostname for service routes. Set this in order to have the GitLab display the correct clone urls.(ex. gitlab.apps.okd311.curiouser.com ). Don't add "http://" or "https://" .
     displayName: Gitlab instance hostname
     name: APPLICATION_HOSTNAME
@@ -514,7 +524,7 @@ parameters:
   - name: UNICORN_WORKERS
     displayName: Number of Unicorn Workers
     description: Number of Unicorn Workers to use per instance. Must be at least 2.
-    value: '2'
+    value: '3'
     required: true
   - description: Volume size for /etc
     displayName: "/etc/gitlab volume size"
@@ -523,7 +533,7 @@ parameters:
   - description: Volume size for GitLab data
     displayName: GitLab data volume size
     name: GITLAB_DATA_VOL_SIZE
-    value: 10Gi
+    value: 20Gi
   - description: Volume size for postgresql data
     displayName: postgresql volume size
     name: POSTGRESQL_VOL_SIZE
@@ -532,7 +542,3 @@ parameters:
     displayName: redis volume size
     name: REDIS_VOL_SIZE
     value: 512Mi
-  - name: NAMESPACE
-    displayName: Namespace name where Gitlab CE will be deployed
-    description: Namespace name where Gitlab CE will be deployed
-    required: true

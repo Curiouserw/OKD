@@ -1,36 +1,54 @@
-# SonarQube模板说明
-####  在[https://github.com/OpenShiftDemos/sonarqube-openshift-docker.git](https://github.com/OpenShiftDemos/sonarqube-openshift-docker.git)的基础上进行改造的SoanrQube部署配置模板，主要改造的地方：<br>
-1.源模板配置文件中没有对SonarQube POD中的/opt/sonar/extensions目录挂载持久化卷导致sonarqube无法持久化安装后的插件，POD重建后插件会消失，需要重新安装。所以在模板配置文件中添加了持久化卷请求PVC，并挂载到/opt/sonar/extensions目录下。<br>
 
-2.源模板中，SonarQube容器镜像的JVM初始化堆内存和最大使用内存太小，导致访问量稍微一大，POD就会挂掉。修改容器镜像中SonarQube的配置文件，重新配置JVM。所以容器镜像需要在Image目录下手动构建并上传到Openshift集群的私有镜像注册仓库中。
+# 基于SonarQube官方镜像在openshift中部署的Template模板
 
-## 目录结构说明
-<pre>
--pv.yml：创建NFS类型持久化卷的YML配置文件，SonarQube POD中的/opt/sonar/{data，extensions}，Postgresql POD的数据目录需要持-久化。
--sonarqube-postgresql-template.yaml : Openshift模板配置文件，定义SonarQube、Postgresql两个POD的DC、IS、Router配置等。
--Image ：模板文件中的容器镜像，需手动在该目录下执行以下命令进行构建
-    |-Dockerfile
-    |-fix-permissions
-    |-run.sh
-</pre>
-# 部署步骤
-### 1、创建SonarQube工程
-<pre>
-oc new-project --display-name="SonarQube" sonarqube
-</pre>
-### 2、创建PV
-<pre>
-oc create -f pv.yml
-</pre>
-### 3、导入模板配置文件
-<pre>
-oc create -f sonarqube-postgresql-template.yaml
-</pre>
-### 4、构建模板中容器镜像SonarQube并推送到Openshift集群私有镜像注册仓库sonarqube镜像流中
-<pre>
-cd Image ;\
-docker build -t 镜像仓库URL/sonarqube/sonarqube:6.7 . ;\
-docker push 镜像仓库URL/sonarqube/sonarqube:6.7
-</pre>
-### 5、配置模板（使用模板配置文件中默认值即可，本步骤略）
+## 相关链接
+Docker镜像下载地址：https://hub.docker.com/_/sonarqube?tab=description
 
+Docker镜像说明文档：https://github.com/docker-library/docs/tree/master/sonarqube
+
+Docker镜像GIthub: https://github.com/SonarSource/docker-sonarqube
+
+下载插件：https://binaries.sonarsource.com/Distribution/
+
+LDAP插件的说明文档：https://docs.sonarqube.org/display/SONARQUBE67/LDAP+Plugin
+
+Sonarqube集成LDAP说明文档：https://docs.sonarqube.org/latest/instance-administration/delegated-auth/
+
+## Template说明
+1. 第一次部署时自动从本仓库下载安装ldap插件，同时可在模板中通过环境变量的形式添加LDAP相关的配置（"7.7-community"之后的版本才可以）。
+
+2. 可在模板中选择要部署的版本
+
+3. 需要持久化的目录
+
+   | 目录                      | 说明                                              | 可配置的环境变量     |
+   | ------------------------- | ------------------------------------------------- | -------------------- |
+   | /opt/sonarqube/conf       | 配置文件目录。例如sonar.properties                | sonarqube_conf       |
+   | /opt/sonarqube/data       | 数据目录。存储elasticsearch或者默认H2数据库的数据 | sonarqube_data       |
+   | /opt/sonarqube/logs       | 日志目录                                          | sonarqube_logs       |
+   | /opt/sonarqube/extensions | 插件目录                                          | sonarqube_extensions |
+
+## 操作步骤
+```jshelllanguage
+oc new-project sonarqube --display-name="SonarQube" && \
+oc project sonarqube && \
+oc create -f https://raw.githubusercontent.com/RationalMonster/OKD/master/MiddlewareOpenshiftTemplates/SonarQube/SonarQube-LDAP-template.yaml -n sonarqube && \
+oc -n sonarqube process \
+    sonarqube \
+    NAMESPACE=sonarqube \
+    SONARQUBE_VERSION="7.9-community" \
+    LADP_URL='ldap://openldap-service.openldap.svc:389' \
+    LDAP_BINDDN='cn=admin,dc=example,dc=com' \
+    LDAP_BINDDNPASSWORD='*****' \
+    LDAP_USER_BASEDN='ou=employee,dc=example,dc=com' \
+    LDAP_USER_REQUEST='(&(memberOf=cn=sonarqube,ou=applications,dc=example,dc=com))' \
+    LDAP_USER_REALNAMEATTRIBUTE='sn' \
+    JVM_CE='-Xmx1024m -Xms512m -XX:+HeapDumpOnOutOfMemoryError' \
+    JVM_WEB='-Xmx1024m -Xms512m -XX:+HeapDumpOnOutOfMemoryError' \
+    |oc create -f -
+```
+
+## 删除创建的资源
+```jshelllanguage
+oc delete project/sonarqube  scc/sonarqube-anyuid
+```

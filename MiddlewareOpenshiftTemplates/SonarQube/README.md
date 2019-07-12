@@ -1,5 +1,5 @@
 
-# 基于SonarQube官方镜像在openshift中部署的Template模板
+# 基于官方SonarQube镜像在openshift中部署的Template模板
 
 ## 相关链接
 Docker镜像下载地址：https://hub.docker.com/_/sonarqube?tab=description

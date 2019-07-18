@@ -123,7 +123,8 @@ objects:
       spec:
         initContainers:
           - name: init-scheduler
-            image: busybox
+            image: docker.io/busybox:latest
+            imagePullPolicy: IfNotPresent
             command: ['sh', '-c', 'until nc -znv openldap-service 389; do echo waiting for OpenLDAP Server to be up; sleep 5; done;']
             restartPolicy: Always
         containers:

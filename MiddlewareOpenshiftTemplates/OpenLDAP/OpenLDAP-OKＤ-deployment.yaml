@@ -1,272 +1,304 @@
-
 apiVersion: v1
 kind: Template
-metadata:
-  name: openldap
-parameters:
-- description: "Optional version: 1.2.1, 1.2.4"
-  displayName: The Version of OpenLDAP
-  name: OPENLDAP_VERSION
-  required: true
-  value: 1.2.4
-- description: Volume size for Data
-  displayName: "openldap data volume size"
-  name: OPENLDAP_DATA_SIZE
-  value: 1Gi
-  required: true
-- description: Defaults to Example Inc.
-  displayName: Organisation name.  
-  name: OPENLDAP_ORGANISATION
-- description: Defaults to example.org
-  displayName: Ldap domain. 
-  name: OPENLDAP_DOMAIN
-- description:  If empty automatically set from LDAP_DOMAIN value. Defaults to (empty)
-  displayName: Ldap base DN.
-  name: OPENLDAP_BASE_DN  
-- description: Defaults to admin
-  displayName: OpenLDAP Admin  password
-  name: OPENLDAP_ADMIN_PASSWORD
-- description: Defaults to config
-  displayName: OpenLDAP Config  password
-  name: OPENLDAP_CONFIG_PASSWORD
-- description: Defaults to false
-  displayName: Add a read only user.
-  name: OPENLDAP_READONLY_USER
-- description: Defaults to readonly
-  displayName: Read only user username.
-  name: OPENLDAP_READONLY_USER_USERNAME
-- description: Defaults to readonly.
-  displayName: Read only user password.
-  name: OPENLDAP_READONLY_USER_PASSWORD
-objects:
-#---------------------------------OpenLDAP  DC ---------------------------------
-- kind: DeploymentConfig
-  apiVersion: v1
-  metadata:
-    name: openldap
-    labels:
-      app: openldap
-  spec:
-    replicas: 1
-    template:
-      metadata:
-        labels:
-          app: openldap
-      spec:
-        containers:
-        - name: openldap
-          image: osixia/openldap:${OPENLDAP_VERSION}
-          envFrom:
-          - secretRef:
-              name: openldap-env
-          ports:
-          - containerPort: 389
-            name: openldap
-          volumeMounts:
-          - name: openldap-data
-            mountPath: /var/lib/ldap
-          - name: openldap-config
-            mountPath: /etc/ldap/slapd.d
-          - name: openldap-certs
-            mountPath: /container/service/slapd/assets/certs           
-          livenessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            successThreshold: 1
-            tcpSocket:
-              port: 389
-            timeoutSeconds: 1
-          readinessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            successThreshold: 1
-            tcpSocket:
-              port: 389
-            timeoutSeconds: 1
-          resources:
-            limits:
-              cpu: 200m
-              memory: 200Mi
-            requests:
-              cpu: 100m
-              memory: 100Mi      
-        volumes:
-        - name: openldap-data
-          persistentVolumeClaim:
-            claimName: openldap-data
-        - name: openldap-config
-          persistentVolumeClaim:
-            claimName: openldap-config
-        - name: openldap-certs
-          persistentVolumeClaim:
-            claimName: openldap-certs
-        serviceAccount: openldap
-        dnsPolicy: ClusterFirst
-        restartPolicy: Always
-        securityContext: {}
-        terminationGracePeriodSeconds: 30
+message: |-
+  The OpenLDAP service have been created in your ${NAMESPACE} namespace .
 
-- kind: DeploymentConfig
-  apiVersion: v1
-  metadata:
-    name: phpldapadmin
-    labels:
-      app: phpldapadmin
-  spec:
-    replicas: 1
-    template:
-      metadata:
-        labels:
-          app: phpldapadmin
-      spec:
-        initContainers:
-          - name: init-scheduler
-            image: docker.io/busybox:latest
-            imagePullPolicy: IfNotPresent
-            command: ['sh', '-c', 'until nc -znv openldap-service 389; do echo waiting for OpenLDAP Server to be up; sleep 5; done;']
-            restartPolicy: Always
-        containers:
-        - name: phpldapadmin
-          env:
-          - name: PHPLDAPADMIN_HTTPS
-            value: "false"
-          - name: PHPLDAPADMIN_LDAP_HOSTS
-            value: openldap-service
-          image: osixia/phpldapadmin:0.7.2
-          ports:
-          - containerPort: 80
-          livenessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            successThreshold: 1
-            tcpSocket:
-              port: 80
-            timeoutSeconds: 1
-          readinessProbe:
-            failureThreshold: 3
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            successThreshold: 1
-            tcpSocket:
-              port: 80
-            timeoutSeconds: 1
-          resources:
-            limits:
-              cpu: 200m
-              memory: 200Mi
-            requests:
-              cpu: 100m
-              memory: 100Mi
-        restartPolicy: Always
-        serviceAccount: openldap
-#---------------------------------OpenLDAP  Secret ---------------------------------
-- kind: Secret
-  apiVersion: v1
-  metadata:
-    name: openldap-env
-  stringData:
-    LDAP_ORGANISATION: ${OPENLDAP_ORGANISATION}
-    LDAP_DOMAIN: ${OPENLDAP_DOMAIN}
-    LDAP_BASE_DN: ${OPENLDAP_BASE_DN}
-    LDAP_ADMIN_PASSWORD: ${OPENLDAP_ADMIN_PASSWORD}
-    LDAP_CONFIG_PASSWORD: ${OPENLDAP_CONFIG_PASSWORD}
-    LDAP_READONLY_USER: ${OPENLDAP_READONLY_USER}
-    LDAP_READONLY_USER_USERNAME: ${OPENLDAP_READONLY_USER_USERNAME}
-    LDAP_READONLY_USER_PASSWORD: ${OPENLDAP_READONLY_USER_PASSWORD}
+    Username Format:
+      if Base DN is "example.com"
+        Administrator User username: cn=admin,dc=example,dc=com
+        Readonly User username: cn=${OPENLDAP_READONLY_USER_USERNAME},dc=example,dc=com
+    Administrator User admin Password: ${OPENLDAP_ADMIN_PASSWORD}
+    Readonly User ${OPENLDAP_READONLY_USER_USERNAME} Password: ${OPENLDAP_READONLY_USER_PASSWORD}
+
+  Connection URL: ldap://${APPLICATION_NAME}-service.${NAMESPACE}.svc:389
+
+  For more information about using this template, including OpenShift considerations, see https://github.com/RationalMonster/OKD/MiddlewareOpenshiftTemplates/OpenLDAP/README.md
+metadata:
+  name: openldap-phpldapadmin
+  annotations:
+    description: "
+      OpenLDAP: This  templates deploy OpenLDAP and Php ldapadmin instance  \n
+
+      1. docker image: osixia/openldap , osixia/phpldapadmin:0.7.2 \n
+      2. reference: https://github.com/redhat-cop/containers-quickstarts/blob/master/gitlab-ce/.openshift/templates/gitlab-ssl.yml#L377 \n
+
+      Maintainer: Curiouser \n
+      Github: https://github.com/RationalMonster/OKD \n
+
+      Note: \n
+        OpenLDAP requries that the serviceaccount for the main OpenLDAP app be added to the anyuid security context. \n
+        The service account name is: <application name>-user
+      "
+    tags: OpenLDAP,PHPLDAPAdmin
+parameters:
+  - name: NAMESPACE
+    displayName: Namespace name where OpenLDAP will be deployed
+    description: Namespace name where OpenLDAP will be deployed
+    required: true
+  - name: APPLICATION_NAME
+    displayName: The unique name of OpenLDAP instance
+    description:
+    required: true
+    value: "ldap"
+  - description: "Optional version: 1.2.1, 1.2.4"
+    displayName: The Version of OpenLDAP
+    name: OPENLDAP_VERSION
+    required: true
+    value: 1.2.4
+  - description: Defaults to example.org. Like： example.com
+    displayName: Ldap domain.
+    name: OPENLDAP_DOMAIN
+  - description: Defaults to admin
+    displayName: OpenLDAP Admin  password
+    name: OPENLDAP_ADMIN_PASSWORD
+  - description: Defaults to Example Inc.
+    displayName: Organisation name.
+    name: OPENLDAP_ORGANISATION
+  - description:  If empty automatically set from LDAP_DOMAIN value. Defaults to (empty)
+    displayName: Ldap base DN.
+    name: OPENLDAP_BASE_DN
+  - description: Defaults to false
+    displayName: Add a read only user.
+    name: OPENLDAP_READONLY_USER
+  - description: Defaults to readonly
+    displayName: Read only user username.
+    name: OPENLDAP_READONLY_USER_USERNAME
+  - description: Defaults to readonly.
+    displayName: Read only user password.
+    name: OPENLDAP_READONLY_USER_PASSWORD
+  - description: Volume size for Data
+    displayName: "openldap data volume size"
+    name: OPENLDAP_DATA_SIZE
+    value: 2Gi
+    required: true
+objects:
+  #---------------------------------OpenLDAP RBAC --------------------------------
+  - kind: SecurityContextConstraints
+    apiVersion: security.openshift.io/v1
+    allowHostDirVolumePlugin: false
+    allowHostIPC: false
+    allowHostNetwork: false
+    allowHostPID: false
+    allowHostPorts: false
+    allowPrivilegeEscalation: true
+    allowPrivilegedContainer: false
+    allowedCapabilities: null
+    defaultAddCapabilities: null
+    fsGroup:
+      type: RunAsAny
+    groups:
+      - system:cluster-admins
+    metadata:
+      annotations:
+        kubernetes.io/description: anyuid provides all features of the restricted SCC
+          but allows users to run with any UID and any GID.
+      name: "${NAMESPACE}-${APPLICATION_NAME}-anyuid"
+    priority: 10
+    readOnlyRootFilesystem: false
+    requiredDropCapabilities:
+      - MKNOD
+    runAsUser:
+      type: RunAsAny
+    seLinuxContext:
+      type: MustRunAs
+    supplementalGroups:
+      type: RunAsAny
+    users:
+      - system:serviceaccount:${NAMESPACE}:${APPLICATION_NAME}-user
+    volumes:
+      - configMap
+      - downwardAPI
+      - emptyDir
+      - persistentVolumeClaim
+      - projected
+      - secret
+#---------------------------------OpenLDAP  ServiceAccount ---------------------------------
+  - kind: ServiceAccount
+    apiVersion: v1
+    metadata:
+      name: "${APPLICATION_NAME}-user"
+  #---------------------------------OpenLDAP  DC ---------------------------------
+  - kind: DeploymentConfig
+    apiVersion: v1
+    metadata:
+      name: ${APPLICATION_NAME}
+      labels:
+        app: ${APPLICATION_NAME}
+    spec:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: ${APPLICATION_NAME}
+        spec:
+          containers:
+            - name: ${APPLICATION_NAME}
+              image: osixia/openldap:${OPENLDAP_VERSION}
+              envFrom:
+                - secretRef:
+                    name: ${APPLICATION_NAME}-config-env
+              ports:
+                - containerPort: 389
+                  name: ${APPLICATION_NAME}
+              volumeMounts:
+                - name: ${APPLICATION_NAME}-data
+                  mountPath: /var/lib/ldap
+              livenessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 389
+                timeoutSeconds: 1
+              readinessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 389
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 200Mi
+                requests:
+                  cpu: 100m
+                  memory: 100Mi
+          volumes:
+            - name: ${APPLICATION_NAME}-data
+              persistentVolumeClaim:
+                claimName: ${APPLICATION_NAME}-data
+          serviceAccount: ${APPLICATION_NAME}-user
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+  #---------------------------------Php Ldapadmin  DC ---------------------------------
+  - kind: DeploymentConfig
+    apiVersion: v1
+    metadata:
+      name: ${APPLICATION_NAME}-phpldapadmin
+      labels:
+        app: ${APPLICATION_NAME}-phpldapadmin
+    spec:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: ${APPLICATION_NAME}-phpldapadmin
+        spec:
+          initContainers:
+            - name: init-scheduler
+              image: docker.io/busybox:latest
+              imagePullPolicy: IfNotPresent
+              command: ['sh', '-c', 'until nc -znv ${APPLICATION_NAME}-service 389; do echo waiting for OpenLDAP Server to be up; sleep 5; done;']
+              restartPolicy: Always
+          containers:
+            - name: ${APPLICATION_NAME}-phpldapadmin
+              env:
+                - name: PHPLDAPADMIN_HTTPS
+                  value: "false"
+                - name: PHPLDAPADMIN_LDAP_HOSTS
+                  value: ${APPLICATION_NAME}-service
+              image: osixia/phpldapadmin:0.7.2
+              ports:
+                - containerPort: 80
+              livenessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 80
+                timeoutSeconds: 1
+              readinessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 80
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 200Mi
+                requests:
+                  cpu: 100m
+                  memory: 100Mi
+          restartPolicy: Always
+          serviceAccount: ${APPLICATION_NAME}-user
+  #---------------------------------OpenLDAP Config Secret ---------------------------------
+  - kind: Secret
+    apiVersion: v1
+    metadata:
+      name: ${APPLICATION_NAME}-config-env
+    stringData:
+      LDAP_ORGANISATION: ${OPENLDAP_ORGANISATION}
+      LDAP_DOMAIN: ${OPENLDAP_DOMAIN}
+      LDAP_BASE_DN: ${OPENLDAP_BASE_DN}
+      LDAP_ADMIN_PASSWORD: ${OPENLDAP_ADMIN_PASSWORD}
+      LDAP_READONLY_USER: ${OPENLDAP_READONLY_USER}
+      LDAP_READONLY_USER_USERNAME: ${OPENLDAP_READONLY_USER_USERNAME}
+      LDAP_READONLY_USER_PASSWORD: ${OPENLDAP_READONLY_USER_PASSWORD}
 
 
   #---------------------------------PHP-LDAP-Admin  SVC ---------------------------------
-- kind: Service
-  apiVersion: v1
-  metadata:
-    labels:
-      app: phpldapadmin
-    name: phpldapadmin-service
-  spec:
-    ports:
-      - port: 80
-    selector:
-      app: phpldapadmin
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      labels:
+        app: ${APPLICATION_NAME}-phpldapadmin
+      name: ${APPLICATION_NAME}-phpldapadmin-service
+    spec:
+      ports:
+        - port: 80
+      selector:
+        app: ${APPLICATION_NAME}-phpldapadmin
 
-#---------------------------------PHP-LDAP-Admin  Route--------------------------------
-- kind: Route
-  apiVersion: v1
-  metadata:
-    labels:
-      app: phpldapadmin
-    name: phpldapadmin
-  spec:
-    port:
-      targetPort: 80
-    to:
-      kind: Service
-      name: phpldapadmin-service
-      weight: 100
-    wildcardPolicy: None
+  #---------------------------------PHP-LDAP-Admin  Route--------------------------------
+  - kind: Route
+    apiVersion: v1
+    metadata:
+      labels:
+        app: ${APPLICATION_NAME}-phpldapadmin
+      name: ${APPLICATION_NAME}-phpldapadmin
+    spec:
+      port:
+        targetPort: 80
+      to:
+        kind: Service
+        name: ${APPLICATION_NAME}-phpldapadmin-service
+        weight: 100
+      wildcardPolicy: None
 
-#---------------------------------OpenLDAP  SVC ---------------------------------
+  #---------------------------------OpenLDAP SVC ---------------------------------
 
-- kind: Service
-  apiVersion: v1
-  metadata:
-    labels:
-      app: openldap
-    name: openldap-service
-  spec:
-    ports:
-      - port: 389
-    selector:
-      app: openldap
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      labels:
+        app: ${APPLICATION_NAME}
+      name: ${APPLICATION_NAME}-service
+    spec:
+      ports:
+        - port: 389
+      selector:
+        app: ${APPLICATION_NAME}
 
-#---------------------------------OpenLDAP  PVC ---------------------------------
+  #---------------------------------OpenLDAP  PVC ---------------------------------
 
-- kind: PersistentVolumeClaim
-  apiVersion: v1
-  metadata:
-    labels:
-      app: openldap
-    name: openldap-data
-  spec:
-    accessModes:
-    - ReadWriteOnce
-    resources:
-      requests:
-        storage: "${OPENLDAP_DATA_SIZE}"
-
-- apiVersion: v1
-  kind: PersistentVolumeClaim
-  metadata:
-    labels:
-      app: openldap
-    name: openldap-config
-  spec:
-    accessModes:
-    - ReadWriteOnce
-    resources:
-      requests:
-        storage: 10Mi
-
-- apiVersion: v1
-  kind: PersistentVolumeClaim
-  metadata:
-    labels:
-      app: openldap
-    name: openldap-certs
-  spec:
-    accessModes:
-    - ReadWriteOnce
-    resources:
-      requests:
-        storage: 10Mi
-
-#---------------------------------OpenLDAP  ServiceAccount ---------------------------------
-- kind: ServiceAccount
-  apiVersion: v1
-  metadata:
-    name: openldap
-    labels:
-      app: "openldap"
-      serviceAccount: "openldap"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      labels:
+        app: ${APPLICATION_NAME}
+      name: ${APPLICATION_NAME}-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "${OPENLDAP_DATA_SIZE}"

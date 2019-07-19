@@ -69,7 +69,7 @@ parameters:
   - description: Volume size for Data
     displayName: "openldap data volume size"
     name: OPENLDAP_DATA_SIZE
-    value: 2Gi
+    value: 1Gi
     required: true
 objects:
   #---------------------------------OpenLDAP RBAC --------------------------------
@@ -141,8 +141,10 @@ objects:
                 - containerPort: 389
                   name: ${APPLICATION_NAME}
               volumeMounts:
-                - name: ${APPLICATION_NAME}-data
+                - name: ${APPLICATION_NAME}-database
                   mountPath: /var/lib/ldap
+                - name: ${APPLICATION_NAME}-config
+                  mountPath: /etc/ldap/slapd.d
               livenessProbe:
                 failureThreshold: 3
                 initialDelaySeconds: 20
@@ -167,9 +169,12 @@ objects:
                   cpu: 100m
                   memory: 100Mi
           volumes:
-            - name: ${APPLICATION_NAME}-data
+            - name: ${APPLICATION_NAME}-database
               persistentVolumeClaim:
-                claimName: ${APPLICATION_NAME}-data
+                claimName: ${APPLICATION_NAME}-database
+            - name: ${APPLICATION_NAME}-config
+              persistentVolumeClaim:
+                claimName: ${APPLICATION_NAME}-config
           serviceAccount: ${APPLICATION_NAME}-user
           dnsPolicy: ClusterFirst
           restartPolicy: Always
@@ -295,10 +300,22 @@ objects:
     metadata:
       labels:
         app: ${APPLICATION_NAME}
-      name: ${APPLICATION_NAME}-data
+      name: ${APPLICATION_NAME}-database
     spec:
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: "${OPENLDAP_DATA_SIZE}"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      labels:
+        app: ${APPLICATION_NAME}
+      name: ${APPLICATION_NAME}-config
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 500Mi

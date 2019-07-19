@@ -66,6 +66,9 @@ parameters:
   - description: Defaults to readonly.
     displayName: Read only user password.
     name: OPENLDAP_READONLY_USER_PASSWORD
+  - description: Defaults to config
+    displayName: OpenLDAP Config  password
+    name: OPENLDAP_CONFIG_PASSWORD
   - description: Volume size for Data
     displayName: "openldap data volume size"
     name: OPENLDAP_DATA_SIZE
@@ -248,6 +251,7 @@ objects:
       LDAP_READONLY_USER: ${OPENLDAP_READONLY_USER}
       LDAP_READONLY_USER_USERNAME: ${OPENLDAP_READONLY_USER_USERNAME}
       LDAP_READONLY_USER_PASSWORD: ${OPENLDAP_READONLY_USER_PASSWORD}
+      LDAP_CONFIG_PASSWORD: ${OPENLDAP_CONFIG_PASSWORD}
 
 
   #---------------------------------PHP-LDAP-Admin  SVC ---------------------------------

@@ -87,8 +87,6 @@ objects:
   - apiVersion: v1
     kind: Service
     metadata:
-      annotations:
-        template.openshift.io/expose-uri: mysql://{.spec.clusterIP}:{.spec.ports[?(.name=="mysql")].port}
       name: mysql-zabbix-proxy
     spec:
       ports:
@@ -184,8 +182,6 @@ objects:
   - apiVersion: v1
     kind: Service
     metadata:
-      annotations:
-        template.openshift.io/expose-uri: mysql://{.spec.clusterIP}:{.spec.ports[?(.name=="mysql")].port}
       name: mysql-zabbix-server
     spec:
       ports:
@@ -333,7 +329,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "5Gi"
   - apiVersion: v1
     kind: Service
     metadata:
@@ -345,7 +341,7 @@ objects:
           protocol: TCP
           targetPort: 10052
       selector:
-        name: zabbix-java-gateway
+        app: zabbix-java-gateway
       sessionAffinity: None
       type: ClusterIP
   #---------------------------------Zabbix-Server DC ---------------------------------
@@ -369,6 +365,12 @@ objects:
           labels:
             app: zabbix-server
         spec:
+          initContainers:
+            - name: init-scheduler
+              image: docker.io/busybox:latest
+              imagePullPolicy: IfNotPresent
+              command: ['sh', '-c', 'until nc -znv mysql-zabbix-server 3306 && nc -znv zabbix-java-gateway 10052 ; do echo waiting for mysql-for-zabbix-server and zabbix-java-gateway  all to be up; sleep 5; done;']
+              restartPolicy: Always
           containers:
             - name: zabbix-server
               image: zabbix/zabbix-server-mysql:${ZABBIX_VERSION}
@@ -457,7 +459,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "5Gi"
   - kind: PersistentVolumeClaim
     apiVersion: v1
     metadata:
@@ -467,7 +469,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "500Mi"
   - kind: PersistentVolumeClaim
     apiVersion: v1
     metadata:
@@ -477,7 +479,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "5Gi"
   - kind: PersistentVolumeClaim
     apiVersion: v1
     metadata:
@@ -487,7 +489,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "500Mi"
   - apiVersion: v1
     kind: Service
     metadata:
@@ -499,7 +501,7 @@ objects:
           protocol: TCP
           targetPort: 10051
       selector:
-        deploymentconfig: zabbix-server
+        app: zabbix-server
       sessionAffinity: None
       type: ClusterIP
   #---------------------------------Zabbix-Proxy DC ---------------------------------
@@ -523,6 +525,12 @@ objects:
           labels:
             app: zabbix-proxy
         spec:
+          initContainers:
+            - name: init-scheduler
+              image: docker.io/busybox:latest
+              imagePullPolicy: IfNotPresent
+              command: ['sh', '-c', 'until nc -znv mysql-zabbix-proxy 3306 && nc -znv zabbix-server 10051 ; do echo waiting for mysql-for-zabbix-proxy and zabbix-server  all to be up; sleep 5; done;']
+              restartPolicy: Always
           containers:
             - name: zabbix-proxy
               image: zabbix/zabbix-proxy-mysql:${ZABBIX_VERSION}
@@ -611,7 +619,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "5Gi"
   - kind: PersistentVolumeClaim
     apiVersion: v1
     metadata:
@@ -621,7 +629,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "500Mi"
   - kind: PersistentVolumeClaim
     apiVersion: v1
     metadata:
@@ -631,7 +639,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "5Gi"
   - kind: PersistentVolumeClaim
     apiVersion: v1
     metadata:
@@ -641,7 +649,7 @@ objects:
         - ReadWriteOnce
       resources:
         requests:
-          storage: "10Gi"
+          storage: "500Mi"
 
   - apiVersion: v1
     kind: Service
@@ -654,7 +662,7 @@ objects:
           protocol: TCP
           targetPort: 10051
       selector:
-        name: zabbix-proxy
+        app: zabbix-proxy
       sessionAffinity: None
       type: ClusterIP
   #---------------------------------Zabbix-Web DC ---------------------------------
@@ -677,6 +685,12 @@ objects:
           labels:
             app: zabbix-web
         spec:
+          initContainers:
+            - name: init-scheduler
+              image: docker.io/busybox:latest
+              imagePullPolicy: IfNotPresent
+              command: ['sh', '-c', 'until nc -znv mysql-zabbix-server 3306 && nc -znv zabbix-server 10051 ; do echo waiting for mysql-for-zabbix-server and zabbix-server  all to be up; sleep 5; done;']
+              restartPolicy: Always
           containers:
             - name: zabbix-web
               image: zabbix/zabbix-web-nginx-mysql:${ZABBIX_VERSION}
@@ -739,7 +753,7 @@ objects:
           protocol: TCP
           targetPort: 80
       selector:
-        name: zabbix-web
+        app: zabbix-web
       sessionAffinity: None
       type: ClusterIP
   - kind: Route
@@ -749,6 +763,7 @@ objects:
         app: zabbix-web
       name: zabbix-web
     spec:
+      host: zabbix.apps.okd311.curiouser.com
       port:
         targetPort: 80
       to:

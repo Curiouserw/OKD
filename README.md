@@ -1,6 +1,6 @@
 # Template 编写原则
 
-#### 1. 指定版本镜像的Container，拉取策略尽量使用IfNotPresent。使用latest版本镜像的Container，再使用Always
+#### 1. 指定版本镜像的Container，拉取策略尽量使用IfNotPresent。使用latest版本镜像的Container，使用Always
 ```yaml
 imagePullPolicy: IfNotPresent
 imagePullPolicy: Always
@@ -106,3 +106,28 @@ containers:
 
 #### 6. 所有的Template都要添加健康检查和资源限制
 
+```yaml
+livenessProbe:
+  failureThreshold: 3
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  successThreshold: 1
+  tcpSocket:
+    port: 80
+  timeoutSeconds: 1
+readinessProbe:
+  failureThreshold: 3
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  successThreshold: 1
+  tcpSocket:
+    port: 80
+  timeoutSeconds: 1
+resources:
+  limits:
+    cpu: 800m
+    memory: 1500Mi
+  requests:
+    cpu: 500m
+    memory: 1024Mi
+```

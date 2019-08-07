@@ -301,7 +301,7 @@ objects:
                 value: 'true'
               - name: xpack.security.enabled
                 value: 'true'
-            image: 'docker.elastic.co/elasticsearch/elasticsearch:7.1.1'
+            image: 'docker.elastic.co/elasticsearch/elasticsearch:7.2.0'
             imagePullPolicy: IfNotPresent
             name: elasticsearch
             ports:

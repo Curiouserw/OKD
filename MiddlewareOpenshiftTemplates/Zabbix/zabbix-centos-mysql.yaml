@@ -1,0 +1,758 @@
+apiVersion: v1
+kind: Template
+message: |-
+  The default credentials to log in are:
+      username: Admin
+      password: zabbix
+metadata:
+  name: openldap-phpldapadmin
+  annotations:
+    description: "
+        This Template will deploy MySQL-for-Zabbix-Server ,MySQL-for-Zabbix-Proxy ,Zabbix-Java-Gateway ,Zabbix-Server ,Zabbix-Proxy ,Zabbix-Web
+      "
+    tags: OpenLDAP,PHPLDAPAdmin
+parameters:
+  - name: NAMESPACE
+    displayName: Namespace name where Zabbix will be deployed
+    description: Namespace name where Zabbix will be deployed
+    required: true
+    value: zabbix
+  - name: APPLICATION_NAME
+    displayName: The unique name of Zabbix instance
+    description:
+    required: true
+    value: "zabbix"
+  - description: "Optional version: centos-4.2.5, centos-4.2.5"
+    displayName: The Version of Zabbix
+    name: ZABBIX_VERSION
+    required: true
+    value: centos-4.2.5
+
+objects:
+  #---------------------------------Zabbix RBAC --------------------------------
+  - kind: SecurityContextConstraints
+    apiVersion: security.openshift.io/v1
+    allowHostDirVolumePlugin: false
+    allowHostIPC: false
+    allowHostNetwork: false
+    allowHostPID: false
+    allowHostPorts: false
+    allowPrivilegeEscalation: true
+    allowPrivilegedContainer: false
+    allowedCapabilities: null
+    defaultAddCapabilities: null
+    fsGroup:
+      type: RunAsAny
+    groups:
+      - system:cluster-admins
+    metadata:
+      annotations:
+        kubernetes.io/description: anyuid provides all features of the restricted SCC
+          but allows users to run with any UID and any GID.
+      name: "${APPLICATION_NAME}-anyuid"
+    priority: 10
+    readOnlyRootFilesystem: false
+    requiredDropCapabilities:
+      - MKNOD
+    runAsUser:
+      type: RunAsAny
+    seLinuxContext:
+      type: MustRunAs
+    supplementalGroups:
+      type: RunAsAny
+    users:
+      - system:serviceaccount:${NAMESPACE}:${APPLICATION_NAME}-user
+    volumes:
+      - configMap
+      - downwardAPI
+      - emptyDir
+      - persistentVolumeClaim
+      - projected
+      - secret
+  #---------------------------------Zabbix  ServiceAccount ---------------------------------
+  - kind: ServiceAccount
+    apiVersion: v1
+    metadata:
+      name: "${APPLICATION_NAME}-user"
+  #---------------------------------MySQL-Zabbix-Proxy DC ---------------------------------
+  - kind: Secret
+    apiVersion: v1
+    metadata:
+      name: mysql-zabbix-proxy-config-env
+    stringData:
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix
+      MYSQL_ROOT_PASSWORD: zabbix
+      MYSQL_DATABASE: zabbix_proxy
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      annotations:
+        template.openshift.io/expose-uri: mysql://{.spec.clusterIP}:{.spec.ports[?(.name=="mysql")].port}
+      name: mysql-zabbix-proxy
+    spec:
+      ports:
+        - name: mysql-zabbix-proxy
+          port: 3306
+          protocol: TCP
+          targetPort: 3306
+      selector:
+        name: mysql-zabbix-proxy
+      sessionAffinity: None
+      type: ClusterIP
+  - apiVersion: v1
+    kind: DeploymentConfig
+    metadata:
+      name: mysql-zabbix-proxy
+    spec:
+      replicas: 1
+      selector:
+        name: mysql-zabbix-proxy
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            name: mysql-zabbix-proxy
+        spec:
+          containers:
+            - capabilities: {}
+              envFrom:
+                - secretRef:
+                    name: mysql-zabbix-proxy-config-env
+              image: 'docker.io/centos/mysql-57-centos7:latest'
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                initialDelaySeconds: 30
+                tcpSocket:
+                  port: 3306
+                timeoutSeconds: 1
+              name: mysql
+              ports:
+                - containerPort: 3306
+                  protocol: TCP
+              readinessProbe:
+                exec:
+                  command:
+                    - /bin/sh
+                    - -i
+                    - -c
+                    - MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u $MYSQL_USER -D $MYSQL_DATABASE
+                      -e 'SELECT 1'
+                initialDelaySeconds: 5
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  memory: 512Mi
+              securityContext:
+                capabilities: {}
+                privileged: false
+              terminationMessagePath: /dev/termination-log
+              volumeMounts:
+                - mountPath: /var/lib/mysql/data
+                  name: mysql-zabbix-proxy-data
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          volumes:
+            - name: mysql-zabbix-proxy-data
+              persistentVolumeClaim:
+                claimName: mysql-zabbix-proxy-data
+      triggers:
+        - type: ConfigChange
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      labels:
+        app: mysql-zabbix-proxy-data
+      name: mysql-zabbix-proxy-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  #---------------------------------MySQL-Zabbix-Server DC ---------------------------------
+  - kind: Secret
+    apiVersion: v1
+    metadata:
+      name: mysql-zabbix-server-config-env
+    stringData:
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix
+      MYSQL_ROOT_PASSWORD: zabbix
+      MYSQL_DATABASE: zabbix
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      annotations:
+        template.openshift.io/expose-uri: mysql://{.spec.clusterIP}:{.spec.ports[?(.name=="mysql")].port}
+      name: mysql-zabbix-server
+    spec:
+      ports:
+        - name: mysql-zabbix-server
+          port: 3306
+          protocol: TCP
+          targetPort: 3306
+      selector:
+        name: mysql-zabbix-server
+      sessionAffinity: None
+      type: ClusterIP
+  - apiVersion: v1
+    kind: DeploymentConfig
+    metadata:
+      name: mysql-zabbix-server
+    spec:
+      replicas: 1
+      selector:
+        name: mysql-zabbix-server
+      strategy:
+        type: Recreate
+      template:
+        metadata:
+          labels:
+            name: mysql-zabbix-server
+        spec:
+          containers:
+            - capabilities: {}
+              envFrom:
+                - secretRef:
+                    name: mysql-zabbix-server-config-env
+              image: 'docker.io/centos/mysql-57-centos7:latest'
+              imagePullPolicy: IfNotPresent
+              livenessProbe:
+                initialDelaySeconds: 30
+                tcpSocket:
+                  port: 3306
+                timeoutSeconds: 1
+              name: mysql
+              ports:
+                - containerPort: 3306
+                  protocol: TCP
+              readinessProbe:
+                exec:
+                  command:
+                    - /bin/sh
+                    - -i
+                    - -c
+                    - MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u $MYSQL_USER -D $MYSQL_DATABASE
+                      -e 'SELECT 1'
+                initialDelaySeconds: 5
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  memory: 512Mi
+              securityContext:
+                capabilities: {}
+                privileged: false
+              terminationMessagePath: /dev/termination-log
+              volumeMounts:
+                - mountPath: /var/lib/mysql/data
+                  name: mysql-zabbix-server-data
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          volumes:
+            - name: mysql-zabbix-server-data
+              persistentVolumeClaim:
+                claimName: mysql-zabbix-server-data
+      triggers:
+        - type: ConfigChange
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      labels:
+        app: mysql-zabbix-server-data
+      name: mysql-zabbix-server-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  #---------------------------------Zabbix-Java-Gateway DC ---------------------------------
+  - kind: DeploymentConfig
+    apiVersion: v1
+    metadata:
+      name: zabbix-java-gateway
+      labels:
+        app: zabbix-java-gateway
+    spec:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: zabbix-java-gateway
+        spec:
+          containers:
+            - name: zabbix-java-gateway
+              image: zabbix/zabbix-java-gateway:${ZABBIX_VERSION}
+              imagePullPolicy: IfNotPresent
+              ports:
+                - containerPort: 10052
+                  name: java-gateway
+              livenessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 10052
+                timeoutSeconds: 1
+              readinessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 10052
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 200Mi
+                requests:
+                  cpu: 100m
+                  memory: 100Mi
+              volumeMounts:
+                - name: zabbix-java-gateway-data
+                  mountPath: /usr/sbin/zabbix_java/ext_lib
+          volumes:
+            - name: zabbix-java-gateway-data
+              persistentVolumeClaim:
+                claimName: zabbix-java-gateway-data
+          serviceAccount: ${APPLICATION_NAME}-user
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-java-gateway-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: zabbix-java-gateway
+    spec:
+      ports:
+        - name: java-gateway
+          port: 10052
+          protocol: TCP
+          targetPort: 10052
+      selector:
+        name: zabbix-java-gateway
+      sessionAffinity: None
+      type: ClusterIP
+  #---------------------------------Zabbix-Server DC ---------------------------------
+  - kind: Secret
+    apiVersion: v1
+    metadata:
+      name: zabbix-server-config-env
+    stringData:
+      MYSQL_ROOT_PASSWORD: zabbix
+
+  - kind: DeploymentConfig
+    apiVersion: v1
+    metadata:
+      name: zabbix-server
+      labels:
+        app: zabbix-server
+    spec:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: zabbix-server
+        spec:
+          containers:
+            - name: zabbix-server
+              image: zabbix/zabbix-server-mysql:${ZABBIX_VERSION}
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: DB_SERVER_HOST
+                  value: "mysql-zabbix-server"
+                - name: ZBX_JAVAGATEWAY_ENABLE
+                  value: "true"
+                - name: ZBX_JAVAGATEWAY
+                  value: "zabbix-java-gateway"
+                - name: AlertScriptsPath
+                  value: "/usr/lib/zabbix/data/alertscripts"
+                - name: ExternalScripts
+                  value: "/usr/lib/zabbix/data/externalscripts"
+                - name: SSHKeyLocation
+                  value: "/usr/lib/zabbix/data/ssh_keys"
+                - name: SSLCertLocation
+                  value: "/usr/lib/zabbix/data/ssl/certs"
+                - name: SSLKeyLocation
+                  value: "/usr/lib/zabbix/data/ssl/keys"
+                - name: SSLCALocation
+                  value: "/usr/lib/zabbix/data/ssl/ssl_ca"
+              envFrom:
+                - secretRef:
+                    name: zabbix-server-config-env
+              ports:
+                - containerPort: 10051
+                  name: zabbix-server
+              livenessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 10051
+                timeoutSeconds: 1
+              readinessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 10051
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 1000m
+                  memory: 2048Mi
+                requests:
+                  cpu: 100m
+                  memory: 1024Mi
+              volumeMounts:
+                - name: zabbix-server-data
+                  mountPath: /usr/lib/zabbix/data/
+                - name: zabbix-server-modules
+                  mountPath: /var/lib/zabbix/modules
+                - name: zabbix-server-snmptraps
+                  mountPath: /var/lib/zabbix/snmptraps
+                - name: zabbix-server-mibs
+                  mountPath: /var/lib/zabbix/mibs
+          volumes:
+            - name: zabbix-server-data
+              persistentVolumeClaim:
+                claimName: zabbix-server-data
+            - name: zabbix-server-modules
+              persistentVolumeClaim:
+                claimName: zabbix-server-modules
+            - name: zabbix-server-snmptraps
+              persistentVolumeClaim:
+                claimName: zabbix-server-snmptraps
+            - name: zabbix-server-mibs
+              persistentVolumeClaim:
+                claimName: zabbix-server-mibs
+          serviceAccount: ${APPLICATION_NAME}-user
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-server-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-server-modules
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-server-snmptraps
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-server-mibs
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: zabbix-server
+    spec:
+      ports:
+        - name: zabbix-server
+          port: 10051
+          protocol: TCP
+          targetPort: 10051
+      selector:
+        deploymentconfig: zabbix-server
+      sessionAffinity: None
+      type: ClusterIP
+  #---------------------------------Zabbix-Proxy DC ---------------------------------
+  - kind: Secret
+    apiVersion: v1
+    metadata:
+      name: zabbix-proxy-config-env
+    stringData:
+      MYSQL_ROOT_PASSWORD: zabbix
+
+  - kind: DeploymentConfig
+    apiVersion: v1
+    metadata:
+      name: zabbix-proxy
+      labels:
+        app: zabbix-proxy
+    spec:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: zabbix-proxy
+        spec:
+          containers:
+            - name: zabbix-proxy
+              image: zabbix/zabbix-proxy-mysql:${ZABBIX_VERSION}
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: DB_SERVER_HOST
+                  value: "mysql-zabbix-proxy"
+                - name: ZBX_SERVER_HOST
+                  value: "zabbix-server"
+                - name: ZBX_JAVAGATEWAY_ENABLE
+                  value: "true"
+                - name: ZBX_JAVAGATEWAY
+                  value: "zabbix-java-gateway"
+                - name: ExternalScripts
+                  value: "/usr/lib/zabbix/data/externalscripts"
+                - name: SSHKeyLocation
+                  value: "/usr/lib/zabbix/data/ssh_keys"
+                - name: SSLCertLocation
+                  value: "/usr/lib/zabbix/data/ssl/certs"
+                - name: SSLKeyLocation
+                  value: "/usr/lib/zabbix/data/ssl/keys"
+                - name: SSLCALocation
+                  value: "/usr/lib/zabbix/data/ssl/ssl_ca"
+              envFrom:
+                - secretRef:
+                    name: zabbix-proxy-config-env
+              ports:
+                - containerPort: 10051
+                  name: zabbix-proxy
+              livenessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 10051
+                timeoutSeconds: 1
+              readinessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 10051
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 1000m
+                  memory: 2048Mi
+                requests:
+                  cpu: 100m
+                  memory: 1024Mi
+              volumeMounts:
+                - name: zabbix-proxy-data
+                  mountPath: /usr/lib/zabbix/data/
+                - name: zabbix-proxy-modules
+                  mountPath: /var/lib/zabbix/modules
+                - name: zabbix-proxy-snmptraps
+                  mountPath: /var/lib/zabbix/snmptraps
+                - name: zabbix-proxy-mibs
+                  mountPath: /var/lib/zabbix/mibs
+          volumes:
+            - name: zabbix-proxy-data
+              persistentVolumeClaim:
+                claimName: zabbix-proxy-data
+            - name: zabbix-proxy-modules
+              persistentVolumeClaim:
+                claimName: zabbix-proxy-modules
+            - name: zabbix-proxy-snmptraps
+              persistentVolumeClaim:
+                claimName: zabbix-proxy-snmptraps
+            - name: zabbix-proxy-mibs
+              persistentVolumeClaim:
+                claimName: zabbix-proxy-mibs
+          serviceAccount: ${APPLICATION_NAME}-user
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-proxy-data
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-proxy-modules
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-proxy-snmptraps
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+  - kind: PersistentVolumeClaim
+    apiVersion: v1
+    metadata:
+      name: zabbix-proxy-mibs
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: "10Gi"
+
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: zabbix-proxy
+    spec:
+      ports:
+        - name: zabbix-proxy
+          port: 10051
+          protocol: TCP
+          targetPort: 10051
+      selector:
+        name: zabbix-proxy
+      sessionAffinity: None
+      type: ClusterIP
+  #---------------------------------Zabbix-Web DC ---------------------------------
+  - kind: Secret
+    apiVersion: v1
+    metadata:
+      name: zabbix-web-config-env
+    stringData:
+      MYSQL_ROOT_PASSWORD: zabbix
+  - kind: DeploymentConfig
+    apiVersion: v1
+    metadata:
+      name: zabbix-web
+      labels:
+        app: zabbix-web
+    spec:
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: zabbix-web
+        spec:
+          containers:
+            - name: zabbix-web
+              image: zabbix/zabbix-web-nginx-mysql:${ZABBIX_VERSION}
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: DB_SERVER_HOST
+                  value: "mysql-zabbix-server"
+                - name: ZBX_SERVER_HOST
+                  value: "zabbix-server"
+                - name: ZBX_SERVER_NAME
+                  value: "Curiouser"
+                - name: PHP_TZ
+                  value: "Asia/Shanghai"
+                - name: ZBX_UPLOADMAXFILESIZE
+                  value: "5M"
+                - name: ZBX_POSTMAXSIZE
+                  value: "20M"
+              envFrom:
+                - secretRef:
+                    name: zabbix-web-config-env
+              ports:
+                - containerPort: 80
+                  name: zabbix-web
+              livenessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 80
+                timeoutSeconds: 1
+              readinessProbe:
+                failureThreshold: 3
+                initialDelaySeconds: 20
+                periodSeconds: 10
+                successThreshold: 1
+                tcpSocket:
+                  port: 80
+                timeoutSeconds: 1
+              resources:
+                limits:
+                  cpu: 800m
+                  memory: 1500Mi
+                requests:
+                  cpu: 500m
+                  memory: 1024Mi
+          serviceAccount: ${APPLICATION_NAME}-user
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          securityContext: {}
+          terminationGracePeriodSeconds: 30
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: zabbix-web
+    spec:
+      ports:
+        - name: zabbix-web
+          port: 80
+          protocol: TCP
+          targetPort: 80
+      selector:
+        name: zabbix-web
+      sessionAffinity: None
+      type: ClusterIP
+  - kind: Route
+    apiVersion: v1
+    metadata:
+      labels:
+        app: zabbix-web
+      name: zabbix-web
+    spec:
+      port:
+        targetPort: 80
+      to:
+        kind: Service
+        name: zabbix-web
+        weight: 100
+      wildcardPolicy: None

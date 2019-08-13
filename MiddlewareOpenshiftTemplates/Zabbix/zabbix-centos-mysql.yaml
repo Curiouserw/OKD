@@ -742,20 +742,7 @@ objects:
           restartPolicy: Always
           securityContext: {}
           terminationGracePeriodSeconds: 30
-  - apiVersion: v1
-    kind: Service
-    metadata:
-      name: zabbix-web
-    spec:
-      ports:
-        - name: zabbix-web
-          port: 80
-          protocol: TCP
-          targetPort: 80
-      selector:
-        app: zabbix-web
-      sessionAffinity: None
-      type: ClusterIP
+
   - kind: Route
     apiVersion: v1
     metadata:
@@ -771,3 +758,58 @@ objects:
         name: zabbix-web
         weight: 100
       wildcardPolicy: None
+
+  #---------------------------------Zabbix-Agetn DS ---------------------------------
+  - apiVersion: extensions/v1beta1
+    kind: DaemonSet
+    metadata:
+      labels:
+        app: zabbix-agent
+      name: zabbix-agent
+    spec:
+      template:
+        metadata:
+          labels:
+            app: zabbix-agent
+        spec:
+          containers:
+            - image: zabbix/zabbix-agent:centos-4.2.5
+              imagePullPolicy: IfNotPresent
+              name: zabbix-agent
+              port: 10050
+              env:
+                - name: ZBX_SERVER_HOST
+                  value: "zabbix-server"
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 400Mi
+                requests:
+                  cpu: 100m
+                  memory: 200Mi
+              terminationMessagePath: /dev/termination-log
+              terminationMessagePolicy: File
+          dnsPolicy: ClusterFirst
+          restartPolicy: Always
+          schedulerName: default-scheduler
+          serviceAccount: zabbix-user
+          terminationGracePeriodSeconds: 30
+      templateGeneration: 1
+      updateStrategy:
+        rollingUpdate:
+          maxUnavailable: 1
+        type: RollingUpdate
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: zabbix-agent
+    spec:
+      ports:
+        - name: zabbix-agent
+          port: 10050
+          protocol: TCP
+          targetPort: 10050
+      selector:
+        app: zabbix-agent
+      sessionAffinity: None
+      type: ClusterIP

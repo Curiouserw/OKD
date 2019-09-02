@@ -1,0 +1,357 @@
+kind: Template
+apiVersion: v1
+metadata:
+  annotations:
+    description: The SkyWalking OpenShift template
+    tags: APM,SkyWalking
+  name: skywalking
+parameters:
+  - name: NAMESPACE
+    displayName: Namespace name where SkyWalking will be deployed
+    description: Namespace name where SkyWalking will be deployed
+    required: true
+  - name: APPLICATION_NAME
+    displayName: The unique name of SkyWalking instance
+    description:
+    required: true
+    value: "skywalking"
+objects:
+  - kind: SecurityContextConstraints
+    apiVersion: security.openshift.io/v1
+    allowHostDirVolumePlugin: false
+    allowHostIPC: false
+    allowHostNetwork: false
+    allowHostPID: false
+    allowHostPorts: false
+    allowPrivilegeEscalation: true
+    allowPrivilegedContainer: false
+    allowedCapabilities: null
+    defaultAddCapabilities: null
+    fsGroup:
+      type: RunAsAny
+    groups:
+      - system:cluster-admins
+    metadata:
+      annotations:
+        kubernetes.io/description: anyuid provides all features of the restricted SCC
+          but allows users to run with any UID and any GID.
+      name: "skywalking-anyuid"
+    priority: 10
+    readOnlyRootFilesystem: false
+    requiredDropCapabilities:
+      - MKNOD
+    runAsUser:
+      type: RunAsAny
+    seLinuxContext:
+      type: MustRunAs
+    supplementalGroups:
+      type: RunAsAny
+    users:
+      - system:serviceaccount:${NAMESPACE}:skywalking
+    volumes:
+      - configMap
+      - downwardAPI
+      - emptyDir
+      - persistentVolumeClaim
+      - projected
+      - secret
+# =====================================Elasticsearch for SkyWalking=====================================================
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: elasticsearch
+    name: elasticsearch
+  spec:
+    replicas: 1
+    selector:
+      app: elasticsearch
+      deploymentconfig: elasticsearch
+    strategy:
+      recreateParams:
+        timeoutSeconds: 600
+      resources: {}
+      type: Recreate
+    template:
+      metadata:
+        labels:
+          app: elasticsearch
+          deploymentconfig: elasticsearch
+      spec:
+        containers:
+          - env:
+              - name: discovery.type
+                value: single-node
+              - name: cluster.name
+                value: skywalking
+              - name: bootstrap.memory_lock
+                value: 'true'
+              - name: TZ
+                value: Asia/Shanghai
+              - name: ES_JAVA_OPTS
+                value: '-Xms2g -Xmx2g'
+            image: 'docker.io/elasticsearch:6.6.0'
+            imagePullPolicy: IfNotPresent
+            name: elasticsearch
+            ports:
+              - containerPort: 9200
+                protocol: TCP
+              - containerPort: 9300
+                protocol: TCP
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 9200
+              timeoutSeconds: 1
+            resources:
+              limits:
+                cpu: '2'
+                memory: 3Gi
+              requests:
+                cpu: '1'
+                memory: 2Gi
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+              - mountPath: /usr/share/elasticsearch/data
+                name: elasticsearch-data
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+          - name: elasticsearch-data
+            persistentVolumeClaim:
+              claimName: elasticsearch-data
+    test: false
+    triggers:
+      - type: ConfigChange
+#------------------------------------------------Elasticsearch for SkyWalking OAP PVC-----------------------------------
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  metadata:
+    name: elasticsearch-data
+    namespace: ${NAMESPACE}
+  spec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 20Gi
+
+#------------------------------------------------Elasticsearch for SkyWalking OAP Service-------------------------------
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: elasticsearch
+    name: elasticsearch
+    namespace: ${NAMESPACE}
+  spec:
+    ports:
+      - name: 9200-tcp
+        port: 9200
+        protocol: TCP
+        targetPort: 9200
+      - name: 9300-tcp
+        port: 9300
+        protocol: TCP
+        targetPort: 9300
+    selector:
+      deploymentconfig: elasticsearch
+    sessionAffinity: None
+    type: ClusterIP
+
+#=======================================SkyWalking OAP Server===========================================================
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: skywalking-oap-server
+    name: skywalking-oap-server
+    namespace: ${NAMESPACE}
+  spec:
+    replicas: 1
+    selector:
+      app: skywalking-oap-server
+      deploymentconfig: skywalking-oap-server
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: skywalking-oap-server
+          deploymentconfig: skywalking-oap-server
+      spec:
+        containers:
+          - env:
+              - name: SW_STORAGE
+                value: elasticsearch
+              - name: SW_TELEMETRY
+                value: prometheus
+              - name: SW_NAMESPACE
+                value: sw
+              - name: TZ
+                value: CST-8
+              - name: JAVA_OPTS
+                value: '-Xmx2g -Xms2g'
+              - name: SW_STORAGE_ES_CLUSTER_NODES
+                value: 'elasticsearch:9200'
+              - name: SKYWALKING_COLLECTOR_UID
+                value: '(v1:metadata.uid)'
+            image: docker.io/apache/skywalking-oap-server:6.2.0
+            imagePullPolicy: IfNotPresent
+            name: skywalking-oap-server
+            ports:
+              - containerPort: 1234
+                protocol: TCP
+              - containerPort: 11800
+                protocol: TCP
+              - containerPort: 12800
+                protocol: TCP
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: skywalking
+        serviceAccountName: skywalking
+        terminationGracePeriodSeconds: 30
+    test: false
+    triggers:
+      - type: ConfigChange
+#------------------------------------------------SkyWalking OAP ServiceAccount-----------------------------------------
+ - kind: ServiceAccount
+   apiVersion: v1
+   metadata:
+   name: skywalking
+     labels:
+       app: skywalking
+#------------------------------------------------SkyWalking OAP Service------------------------------------------------
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: skywalking-oap-server
+    name: skywalking-oap-server
+    namespace: ${NAMESPACE}
+  spec:
+    clusterIP: 172.30.99.121
+    ports:
+      - name: 1234-tcp
+        port: 1234
+        protocol: TCP
+        targetPort: 1234
+      - name: 11800-tcp
+        port: 11800
+        protocol: TCP
+        targetPort: 11800
+      - name: 12800-tcp
+        port: 12800
+        protocol: TCP
+        targetPort: 12800
+      - name: 9870-tcp
+        port: 9870
+        protocol: TCP
+        targetPort: 9870
+    selector:
+      deploymentconfig: skywalking-oap-server
+    sessionAffinity: None
+    type: ClusterIP
+#=======================================SkyWalking UI==================================================================
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    labels:
+      app: skywalking-ui
+    name: skywalking-ui
+    namespace: ${NAMESPACE}
+  spec:
+    replicas: 1
+    selector:
+      app: skywalking-ui
+      deploymentconfig: skywalking-ui
+    strategy:
+      activeDeadlineSeconds: 21600
+      resources: {}
+      rollingParams:
+        intervalSeconds: 1
+        maxSurge: 25%
+        maxUnavailable: 25%
+        timeoutSeconds: 600
+        updatePeriodSeconds: 1
+      type: Rolling
+    template:
+      metadata:
+        labels:
+          app: skywalking-ui
+          deploymentconfig: skywalking-ui
+      spec:
+        containers:
+          - env:
+              - name: SW_OAP_ADDRESS
+                value: 'skywalking-oap-server:12800'
+            image: docker.io/apache/skywalking-ui:6.2.0
+            imagePullPolicy: IfNotPresent
+            name: skywalking-ui
+            ports:
+              - containerPort: 8080
+                protocol: TCP
+            resources: {}
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+    triggers:
+      - type: ConfigChange
+#------------------------------------------------SkyWalking UI Service------------------------------------------------
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      app: skywalking-ui
+    name: skywalking-ui
+    namespace: ${NAMESPACE}
+  spec:
+    ports:
+      - name: 8080-tcp
+        port: 8080
+        protocol: TCP
+        targetPort: 8080
+    selector:
+      deploymentconfig: skywalking-ui
+    sessionAffinity: None
+    type: ClusterIP
+#------------------------------------------------SkyWalking UI Route------------------------------------------------
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    labels:
+      app: skywalking-ui
+    name: skywalking-ui
+    namespace: ${NAMESPACE}
+  spec:
+    port:
+      targetPort: 8080-tcp
+    to:
+      kind: Service
+      name: skywalking-ui
+      weight: 100
+    wildcardPolicy: None

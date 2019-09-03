@@ -1,5 +1,14 @@
 kind: Template
 apiVersion: v1
+message: |-
+  The SkyWalking  have been created in your ${NAMESPACE} namespace. Monitor your application by SkyWalking
+    1: Agent下载地址：http://skywalking.apache.org/downloads/
+    2: JAR Agent 部署
+      java \
+      -javaagent:/opt/skywalking/agent/skywalking-agent.jar \
+      -Dskywalking.collector.backend_service=skywalking-oap-server.${NAMESPACE}.svc:11800 \
+      -Dskywalking.agent.service_name=yourAppServiceName \
+      -jar yourApp.jar
 metadata:
   annotations:
     description: The SkyWalking OpenShift template
@@ -10,51 +19,56 @@ parameters:
     displayName: Namespace name where SkyWalking will be deployed
     description: Namespace name where SkyWalking will be deployed
     required: true
-  - name: APPLICATION_NAME
-    displayName: The unique name of SkyWalking instance
-    description:
+  - description: "Optional version: 6.1.0, 6.2.0, 6.3.0"
+    displayName: The Version of SkyWalking
+    name: SKYWALKING_VERSION
     required: true
-    value: "skywalking"
+    value: 6.2.0
+  - description: "Optional version: 6.6.0, 6.6.2, 6.7.0, 6.7.2, 6.8.0, 6.8.2；Not Support 7.X"
+    displayName: The Version of ElasticSearch
+    name: ELASTICSEARCH_VERSION
+    required: true
+    value: 6.6.0
 objects:
-  - kind: SecurityContextConstraints
-    apiVersion: security.openshift.io/v1
-    allowHostDirVolumePlugin: false
-    allowHostIPC: false
-    allowHostNetwork: false
-    allowHostPID: false
-    allowHostPorts: false
-    allowPrivilegeEscalation: true
-    allowPrivilegedContainer: false
-    allowedCapabilities: null
-    defaultAddCapabilities: null
-    fsGroup:
-      type: RunAsAny
-    groups:
-      - system:cluster-admins
-    metadata:
-      annotations:
-        kubernetes.io/description: anyuid provides all features of the restricted SCC
-          but allows users to run with any UID and any GID.
-      name: "skywalking-anyuid"
-    priority: 10
-    readOnlyRootFilesystem: false
-    requiredDropCapabilities:
-      - MKNOD
-    runAsUser:
-      type: RunAsAny
-    seLinuxContext:
-      type: MustRunAs
-    supplementalGroups:
-      type: RunAsAny
-    users:
-      - system:serviceaccount:${NAMESPACE}:skywalking
-    volumes:
-      - configMap
-      - downwardAPI
-      - emptyDir
-      - persistentVolumeClaim
-      - projected
-      - secret
+- kind: SecurityContextConstraints
+  apiVersion: security.openshift.io/v1
+  allowHostDirVolumePlugin: false
+  allowHostIPC: false
+  allowHostNetwork: false
+  allowHostPID: false
+  allowHostPorts: false
+  allowPrivilegeEscalation: true
+  allowPrivilegedContainer: false
+  allowedCapabilities: null
+  defaultAddCapabilities: null
+  fsGroup:
+    type: RunAsAny
+  groups:
+    - system:cluster-admins
+  metadata:
+    annotations:
+      kubernetes.io/description: anyuid provides all features of the restricted SCC
+        but allows users to run with any UID and any GID.
+    name: "${NAMESPACE}-skywalking-anyuid"
+  priority: 10
+  readOnlyRootFilesystem: false
+  requiredDropCapabilities:
+    - MKNOD
+  runAsUser:
+    type: RunAsAny
+  seLinuxContext:
+    type: MustRunAs
+  supplementalGroups:
+    type: RunAsAny
+  users:
+    - system:serviceaccount:${NAMESPACE}:skywalking
+  volumes:
+    - configMap
+    - downwardAPI
+    - emptyDir
+    - persistentVolumeClaim
+    - projected
+    - secret
 # =====================================Elasticsearch for SkyWalking=====================================================
 - apiVersion: apps.openshift.io/v1
   kind: DeploymentConfig
@@ -90,7 +104,9 @@ objects:
                 value: Asia/Shanghai
               - name: ES_JAVA_OPTS
                 value: '-Xms2g -Xmx2g'
-            image: 'docker.io/elasticsearch:6.6.0'
+              - name: thread_pool.write.queue_size
+                value: '2000'
+            image: 'docker.io/elasticsearch:${ELASTICSEARCH_VERSION}'
             imagePullPolicy: IfNotPresent
             name: elasticsearch
             ports:
@@ -98,6 +114,14 @@ objects:
                 protocol: TCP
               - containerPort: 9300
                 protocol: TCP
+            livenessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 9200
+              timeoutSeconds: 1
             readinessProbe:
               failureThreshold: 3
               initialDelaySeconds: 60
@@ -195,6 +219,12 @@ objects:
           app: skywalking-oap-server
           deploymentconfig: skywalking-oap-server
       spec:
+        initContainers:
+          - name: init-scheduler
+            image: docker.io/busybox:latest
+            imagePullPolicy: IfNotPresent
+            command: ['sh', '-c', 'until nc -znv elasticsearch  9200; do echo waiting for elasticsearch Server to be up; sleep 5; done;']
+            restartPolicy: Always
         containers:
           - env:
               - name: SW_STORAGE
@@ -202,7 +232,7 @@ objects:
               - name: SW_TELEMETRY
                 value: prometheus
               - name: SW_NAMESPACE
-                value: sw
+                value: apm
               - name: TZ
                 value: CST-8
               - name: JAVA_OPTS
@@ -211,7 +241,7 @@ objects:
                 value: 'elasticsearch:9200'
               - name: SKYWALKING_COLLECTOR_UID
                 value: '(v1:metadata.uid)'
-            image: docker.io/apache/skywalking-oap-server:6.2.0
+            image: docker.io/apache/skywalking-oap-server:${SKYWALKING_VERSION}
             imagePullPolicy: IfNotPresent
             name: skywalking-oap-server
             ports:
@@ -221,7 +251,29 @@ objects:
                 protocol: TCP
               - containerPort: 12800
                 protocol: TCP
-            resources: {}
+            livenessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 11800
+              timeoutSeconds: 1
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 11800
+              timeoutSeconds: 1
+            resources:
+              limits:
+                cpu: 1500m
+                memory: 2Gi
+              requests:
+                cpu: 500m
+                memory: 800Mi
             terminationMessagePath: /dev/termination-log
             terminationMessagePolicy: File
         dnsPolicy: ClusterFirst
@@ -235,12 +287,10 @@ objects:
     triggers:
       - type: ConfigChange
 #------------------------------------------------SkyWalking OAP ServiceAccount-----------------------------------------
- - kind: ServiceAccount
-   apiVersion: v1
-   metadata:
-   name: skywalking
-     labels:
-       app: skywalking
+- kind: ServiceAccount
+  apiVersion: v1
+  metadata:
+    name: skywalking
 #------------------------------------------------SkyWalking OAP Service------------------------------------------------
 - apiVersion: v1
   kind: Service
@@ -250,7 +300,6 @@ objects:
     name: skywalking-oap-server
     namespace: ${NAMESPACE}
   spec:
-    clusterIP: 172.30.99.121
     ports:
       - name: 1234-tcp
         port: 1234
@@ -301,19 +350,47 @@ objects:
           app: skywalking-ui
           deploymentconfig: skywalking-ui
       spec:
+        initContainers:
+          - name: init-scheduler
+            image: docker.io/busybox:latest
+            imagePullPolicy: IfNotPresent
+            command: ['sh', '-c', 'until nc -znv skywalking-oap-server 12800; do echo waiting for SkyWalking OAP Server to be up; sleep 5; done;']
+            restartPolicy: Always
         containers:
           - env:
               - name: SW_OAP_ADDRESS
                 value: 'skywalking-oap-server:12800'
-            image: docker.io/apache/skywalking-ui:6.2.0
+            image: docker.io/apache/skywalking-ui:${SKYWALKING_VERSION}
             imagePullPolicy: IfNotPresent
             name: skywalking-ui
             ports:
               - containerPort: 8080
                 protocol: TCP
-            resources: {}
+            resources:
+              limits:
+                cpu: 1500m
+                memory: 1800Mi
+              requests:
+                cpu: 500m
+                memory: 800Mi
             terminationMessagePath: /dev/termination-log
             terminationMessagePolicy: File
+            livenessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 8080
+              timeoutSeconds: 1
+            readinessProbe:
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              tcpSocket:
+                port: 8080
+              timeoutSeconds: 1
         dnsPolicy: ClusterFirst
         restartPolicy: Always
         schedulerName: default-scheduler

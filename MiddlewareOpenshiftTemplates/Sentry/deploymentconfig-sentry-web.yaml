@@ -1,0 +1,107 @@
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: sentry-web
+  name: sentry-web
+  namespace: sentry
+spec:
+  replicas: 1
+  selector:
+    app: sentry-web
+    deploymentconfig: sentry-web
+  strategy:
+    activeDeadlineSeconds: 21600
+    resources: {}
+    rollingParams:
+      intervalSeconds: 1
+      maxSurge: 25%
+      maxUnavailable: 25%
+      timeoutSeconds: 600
+      updatePeriodSeconds: 1
+    type: Rolling
+  template:
+    metadata:
+      labels:
+        app: sentry-web
+        deploymentconfig: sentry-web
+    spec:
+      containers:
+        - name: sentry-web
+          image: docker.io/sentry:9.1.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SENTRY_DB_NAME
+              value: sentry
+            - name: SENTRY_DB_USER
+              value: sentry
+            - name: SENTRY_DB_PASSWORD
+              value: sentry
+            - name: SENTRY_POSTGRES_HOST
+              value: sentry-postgresql.sentry.svc
+            - name: SENTRY_POSTGRES_PORT
+              value: '5432'
+            - name: SENTRY_REDIS_HOST
+              value: sentry-redis.sentry.svc
+            - name: SENTRY_REDIS_PORT
+              value: '6379'
+            - name: SENTRY_REDIS_PASSWORD
+              value: sentry
+            - name: SENTRY_EMAIL_HOST
+              value: smtp.163.com
+            - name: SENTRY_EMAIL_PORT
+              value: '25'
+            - name: SENTRY_EMAIL_USER
+              value: rationalmonster@163.com
+            - name: SENTRY_EMAIL_PASSWORD
+              value: rM51158
+            - name: SENTRY_EMAIL_USE_TLS
+              value: 'false'
+            - name: SENTRY_SERVER_EMAIL
+              value: rationalmonster@163.com
+            - name: SENTRY_SECRET_KEY
+              value: TGQ3RzNUM0lkSVRlcWZBTzczZUtPeW40ZkpPbjlhbnpRVTJjYXdESQ==
+          ports:
+            - containerPort: 9000
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /_health/
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 50
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /_health/
+              port: 9000
+              scheme: HTTP
+            initialDelaySeconds: 50
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 2
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /var/lib/sentry/files
+              name: sentry-web-data
+            - mountPath: /etc/sentry
+              name: sentry-config
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: sentry-web-data
+          persistentVolumeClaim:
+            claimName: sentry-web-data
+        - configMap:
+            defaultMode: 420
+            name: sentry
+          name: sentry-config

@@ -1,0 +1,82 @@
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: sentry-cronjob
+    deploymentconfig: sentry-cronjob
+  name: sentry-cronjob
+  namespace: sentry
+spec:
+  replicas: 1
+  selector:
+    app: sentry-cronjob
+    deploymentconfig: sentry-cronjob
+  strategy:
+    rollingParams:
+      intervalSeconds: 1
+      maxSurge: 25%
+      maxUnavailable: 25%
+      timeoutSeconds: 600
+      updatePeriodSeconds: 1
+    type: Rolling
+  template:
+    metadata:
+      labels:
+        app: sentry-cronjob
+        deploymentconfig: sentry-cronjob
+    spec:
+      containers:
+        - name: sentry-cronjob
+          image: docker.io/sentry:9.1.2
+          imagePullPolicy: IfNotPresent
+          args: ["run", "cron"]
+          ports:
+            - containerPort: 9000
+              protocol: TCP
+          env:
+            - name: SENTRY_DB_NAME
+              value: sentry
+            - name: SENTRY_DB_USER
+              value: sentry
+            - name: SENTRY_DB_PASSWORD
+              value: sentry
+            - name: SENTRY_POSTGRES_HOST
+              value: sentry-postgresql.sentry.svc
+            - name: SENTRY_POSTGRES_PORT
+              value: '5432'
+            - name: SENTRY_REDIS_HOST
+              value: sentry-redis.sentry.svc
+            - name: SENTRY_REDIS_PORT
+              value: '6379'
+            - name: SENTRY_REDIS_PASSWORD
+              value: sentry
+            - name: SENTRY_EMAIL_HOST
+              value: smtp.163.com
+            - name: SENTRY_EMAIL_PORT
+              value: '25'
+            - name: SENTRY_EMAIL_USER
+              value: rationalmonster@163.com
+            - name: SENTRY_EMAIL_PASSWORD
+              value: rM51158
+            - name: SENTRY_EMAIL_USE_TLS
+              value: 'false'
+            - name: SENTRY_SERVER_EMAIL
+              value: rationalmonster@163.com
+            - name: SENTRY_SECRET_KEY
+              value: TGQ3RzNUM0lkSVRlcWZBTzczZUtPeW40ZkpPbjlhbnpRVTJjYXdESQ==
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /etc/sentry
+              name: sentry-config
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            defaultMode: 420
+            name: sentry
+          name: sentry-config

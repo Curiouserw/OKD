@@ -1,0 +1,42 @@
+ > sentry_plugins.hipchat_ac:0002_auto__del_mentionedevent
+Running migrations for sentry_plugins.jira_ac:
+ - Migrating forwards to 0001_initial.
+ > sentry_plugins.jira_ac:0001_initial
+
+Synced:
+ > django.contrib.admin
+ > django.contrib.auth
+ > django.contrib.contenttypes
+ > django.contrib.messages
+ > django.contrib.sessions
+ > django.contrib.sites
+ > django.contrib.staticfiles
+ > crispy_forms
+ > debug_toolbar
+ > rest_framework
+ > sentry.plugins.sentry_interface_types
+ > sentry.plugins.sentry_mail
+ > sentry.plugins.sentry_urls
+ > sentry.plugins.sentry_useragents
+ > sentry.plugins.sentry_webhooks
+ > sudo
+ > south
+
+Migrated:
+ - sentry
+ - sentry.nodestore
+ - sentry.search
+ - social_auth
+ - sentry.tagstore
+ - sentry_plugins.hipchat_ac
+ - sentry_plugins.jira_ac
+Creating missing DSNs
+Correcting Group.num_comments counter
+
+
+
+
+12:48:43 [WARNING] sentry.utils.geo: settings.GEOIP_PATH_MMDB not configured.
+12:48:51 [INFO] sentry.plugins.github: apps-not-configured
+User created: rationalmonster@163.com
+Added to organization: sentry

@@ -1,0 +1,75 @@
+kind: Job
+apiVersion: batch/v1
+metadata:
+  name: sentry-user-create-job
+  namespace: sentry
+  labels:
+    job-name: sentry-user-create-job
+spec:
+  template:
+    metadata:
+      name: sentry-user-create-job
+      labels:
+        job-name: sentry-user-create-job
+    spec:
+      containers:
+        - name: user-create-job
+          image: docker.io/sentry:9.1.2
+          imagePullPolicy: IfNotPresent
+          command:
+            - sentry
+            - createuser
+            - '--no-input'
+            - '--email'
+            - 'rationalmonster@163.com'
+            - '--superuser'
+            - '--password'
+            - ${SENTRY_USER_PASSWORD}
+          env:
+            - name: SENTRY_SECRET_KEY
+              value: TGQ3RzNUM0lkSVRlcWZBTzczZUtPeW40ZkpPbjlhbnpRVTJjYXdESQ==
+            - name: SENTRY_DB_USER
+              value: sentry
+            - name: SENTRY_DB_NAME
+              value: sentry
+            - name: SENTRY_DB_PASSWORD
+              value: sentry
+            - name: SENTRY_POSTGRES_HOST
+              value: sentry-postgresql.sentry.svc
+            - name: SENTRY_POSTGRES_PORT
+              value: '5432'
+            - name: SENTRY_REDIS_PASSWORD
+              value: sentry
+            - name: SENTRY_REDIS_HOST
+              value: sentry-redis.sentry.svc
+            - name: SENTRY_REDIS_PORT
+              value: '6379'
+            - name: SENTRY_EMAIL_HOST
+              value: smtp.163.com
+            - name: SENTRY_EMAIL_PORT
+              value: '25'
+            - name: SENTRY_EMAIL_USER
+              value: rationalmonster@163.com
+            - name: SENTRY_EMAIL_PASSWORD
+              value: rm51158
+            - name: SENTRY_EMAIL_USE_TLS
+              value: 'false'
+            - name: SENTRY_SERVER_EMAIL
+              value: rationalmonster@163.com
+            - name: SENTRY_USER_PASSWORD
+              value: sentry1234
+          volumeMounts:
+            - name: sentry-config
+              mountPath: /etc/sentry
+          terminationMessagePolicy: File
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+      volumes:
+        - name: volume-5f
+          configMap:
+            name: sentry
+            defaultMode: 420
+      restartPolicy: Never
+      dnsPolicy: ClusterFirst
+      securityContext: {}
+      schedulerName: default-scheduler

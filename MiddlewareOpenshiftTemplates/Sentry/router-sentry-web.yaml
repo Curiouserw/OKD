@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: sentry-web
+  name: sentry-web
+  namespace: sentry
+spec:
+  host: sentry-web.apps.okd311.curiouser.com
+  port:
+    targetPort: 9000-tcp
+  to:
+    kind: Service
+    name: sentry-web
+    weight: 100
+  wildcardPolicy: None

@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: sentry-metrics
+  name: sentry-metrics
+  namespace: sentry
+spec:
+  endpoints:
+  - interval: 10s
+    port: metrics
+    scheme: http
+    targetPort: 9102
+  namespaceSelector:
+    matchNames:
+    - sentry
+  selector:
+    matchLabels:
+      app: sentry-metrics
+      deploymentconfig: sentry-metrics

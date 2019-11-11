@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: sentry-workers
+  name: sentry-workers
+  namespace: sentry
+spec:
+  ports:
+    - name: 9000-tcp
+      port: 9000
+      protocol: TCP
+      targetPort: 9000
+  selector:
+    deploymentconfig: sentry-workers
+  sessionAffinity: None
+  type: ClusterIP

@@ -54,7 +54,7 @@ spec:
             - name: SENTRY_EMAIL_USER
               value: rationalmonster@163.com
             - name: SENTRY_EMAIL_PASSWORD
-              value: rM51158
+              value: *****
             - name: SENTRY_EMAIL_USE_TLS
               value: 'false'
             - name: SENTRY_SERVER_EMAIL
